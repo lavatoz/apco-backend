@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+jspm_packages/
+web_modules/
+
+# Build outputs
+dist/
+build/
+
+# Local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+
+# Logs, temp and coverage directories
+logs
+*.log
+tmp/
+coverage/
+
+# Security Credentials
+keys/
+*.json
+!package.json
+!tsconfig.json
+!tsconfig.app.json
+!tsconfig.node.json

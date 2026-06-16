@@ -1,0 +1,441 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String            @id @default(uuid())
+  email               String            @unique
+  passwordHash        String?
+  firstName           String
+  lastName            String
+  role                Role
+  failedLoginAttempts Int               @default(0)
+  lockedUntil         DateTime?
+  emailVerified       Boolean           @default(false)
+  verificationToken   String?
+  resetToken          String?
+  resetTokenExpires   DateTime?
+  mustChangePassword  Boolean           @default(false)
+  mfaEnabled          Boolean           @default(false)
+  mfaSecret           String?
+  backupCodes         Json?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  linkedClientId      String?           @unique
+  setupToken          String?           @unique
+  status              String            @default("Active")
+  auditLogs           AuditLog[]
+  files               File[]
+  notifications       Notification[]
+  refreshTokens       RefreshToken[]
+  securityEvents      SecurityEvent[]
+  staffAssignments    StaffAssignment[]
+  tasks               Task[]
+  linkedClient        Client?           @relation(fields: [linkedClientId], references: [id])
+  sessions            UserSession[]
+}
+
+model RefreshToken {
+  id              String        @id @default(uuid())
+  tokenHash       String        @unique
+  userId          String
+  parentTokenHash String?
+  isRevoked       Boolean       @default(false)
+  expiresAt       DateTime
+  createdAt       DateTime      @default(now())
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions        UserSession[]
+
+  @@index([tokenHash])
+}
+
+model UserSession {
+  id             String        @id @default(uuid())
+  userId         String
+  refreshTokenId String?
+  deviceName     String?
+  ipAddress      String?
+  userAgent      String?
+  lastSeenAt     DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  refreshToken   RefreshToken? @relation(fields: [refreshTokenId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Client {
+  id          String      @id @default(uuid())
+  name        String
+  email       String      @unique
+  phone       String?
+  address     String?
+  companyName String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+  agreements  Agreement[]
+  expenses    Expense[]
+  invoices    Invoice[]
+  projects    Project[]
+  quotations  Quotation[]
+  tasks       Task[]
+  user        User?
+}
+
+model Project {
+  id                   String            @id @default(uuid())
+  name                 String
+  description          String?
+  status               String            @default("Draft")
+  clientId             String
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  deletedAt            DateTime?
+  driveFolderId        String?
+  galleryFolderId      String?
+  deliverablesFolderId String?
+  agreementsFolderId   String?
+  invoicesFolderId     String?
+  quotationsFolderId   String?
+  stage                String            @default("Booked")
+  agreements           Agreement[]
+  files                File[]
+  invoices             Invoice[]
+  client               Client            @relation(fields: [clientId], references: [id])
+  quotations           Quotation[]
+  staffAssignments     StaffAssignment[]
+  tasks                Task[]
+  workflowEvents       WorkflowEvent[]
+}
+
+model StaffAssignment {
+  id         String   @id @default(uuid())
+  projectId  String
+  userId     String
+  role       Role
+  assignedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Invoice {
+  id              String        @id @default(uuid())
+  invoiceNumber   String        @unique
+  amount          Decimal       @db.Decimal(12, 2)
+  status          String        @default("Draft")
+  projectId       String
+  clientId        String
+  dueDate         DateTime
+  issuedAt        DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+  brand           String?
+  brandId         String?
+  companyLogoUrl  String?
+  discountType    String?
+  discountValue   Decimal?      @db.Decimal(12, 2)
+  notes           String?
+  paymentTerms    String?
+  shippingCost    Decimal?      @db.Decimal(12, 2)
+  taxPercent      Decimal?      @db.Decimal(5, 2)
+  templateId      String?
+  templateVersion String?
+  termsSummary    String?
+  client          Client        @relation(fields: [clientId], references: [id])
+  project         Project       @relation(fields: [projectId], references: [id])
+  items           InvoiceItem[]
+  payments        Payment[]
+}
+
+model Quotation {
+  id              String          @id @default(uuid())
+  quotationNumber String          @unique
+  amount          Decimal         @db.Decimal(12, 2)
+  status          String          @default("Draft")
+  projectId       String
+  clientId        String
+  validUntil      DateTime
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+  brand           String?
+  brandId         String?
+  companyLogoUrl  String?
+  discountType    String?
+  discountValue   Decimal?        @db.Decimal(12, 2)
+  notes           String?
+  paymentTerms    String?
+  shippingCost    Decimal?        @db.Decimal(12, 2)
+  taxPercent      Decimal?        @db.Decimal(5, 2)
+  templateId      String?
+  templateVersion String?
+  termsSummary    String?
+  client          Client          @relation(fields: [clientId], references: [id])
+  project         Project         @relation(fields: [projectId], references: [id])
+  items           QuotationItem[]
+}
+
+model Agreement {
+  id              String    @id @default(uuid())
+  agreementNumber String    @unique
+  status          String    @default("Draft")
+  projectId       String
+  clientId        String
+  fileId          String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+  client          Client    @relation(fields: [clientId], references: [id])
+  file            File?     @relation(fields: [fileId], references: [id])
+  project         Project   @relation(fields: [projectId], references: [id])
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  amount        Decimal  @db.Decimal(12, 2)
+  status        String
+  paymentMethod String
+  transactionId String?
+  invoiceId     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id])
+}
+
+model File {
+  id                  String      @id @default(uuid())
+  key                 String      @unique
+  originalName        String
+  mimeType            String
+  size                Int
+  hash                String
+  isSecured           Boolean     @default(false)
+  projectId           String?
+  userId              String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  deletedAt           DateTime?
+  googleDriveFileId   String?
+  googleDriveViewLink String?
+  category            String?
+  agreements          Agreement[]
+  project             Project?    @relation(fields: [projectId], references: [id])
+  user                User?       @relation(fields: [userId], references: [id])
+
+  @@index([projectId, category])
+}
+
+model WorkflowEvent {
+  id          String   @id @default(uuid())
+  projectId   String
+  eventType   String
+  description String
+  payload     Json?
+  createdAt   DateTime @default(now())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  requestId String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+}
+
+model SecurityEvent {
+  id        String   @id @default(uuid())
+  userId    String?
+  eventType String
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  requestId String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+}
+
+model CompanyProfile {
+  id               String    @id @default(uuid())
+  companyName      String
+  tagline          String?
+  projectType      String
+  logo             String?
+  email            String
+  phone            String
+  address          String?
+  gstin            String?
+  pan              String?
+  website          String?
+  invoicePrefix    String
+  upiId            String?
+  bankDetails      Json?
+  paymentTerms     String    @default("Due on Receipt")
+  invoiceNotes     String?
+  primaryColor     String    @default("#3B82F6")
+  themePreset      String    @default("default")
+  graphicsPreset   String    @default("default")
+  typographyPreset String    @default("default")
+  portalConfig     Json?
+  isDefault        Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+}
+
+model GlobalSetting {
+  key         String   @id @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+model DocumentCounter {
+  prefix    String
+  type      String
+  year      Int
+  lastValue Int    @default(0)
+
+  @@id([prefix, type, year])
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Int
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  amount      Decimal  @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model QuotationItem {
+  id          String    @id @default(uuid())
+  quotationId String
+  description String
+  quantity    Int
+  unitPrice   Decimal   @db.Decimal(12, 2)
+  amount      Decimal   @db.Decimal(12, 2)
+  createdAt   DateTime  @default(now())
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+}
+
+model Expense {
+  id          String    @id @default(uuid())
+  description String
+  amount      Decimal   @db.Decimal(12, 2)
+  category    String
+  date        DateTime
+  clientId    String?
+  brand       String
+  divisionId  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  client      Client?   @relation(fields: [clientId], references: [id])
+}
+
+model Task {
+  id             String   @id @default(uuid())
+  title          String
+  assignee       String   @default("Unassigned")
+  dueDate        DateTime
+  status         String   @default("Pending")
+  brand          String
+  priority       String   @default("High")
+  clientId       String?
+  projectId      String?
+  assignedUserId String?
+  eventId        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  assignedUser   User?    @relation(fields: [assignedUserId], references: [id])
+  client         Client?  @relation(fields: [clientId], references: [id])
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Approval {
+  id             String    @id @default(uuid())
+  type           String
+  targetId       String
+  targetType     String
+  clientName     String
+  brandName      String?
+  amount         Decimal   @db.Decimal(12, 2)
+  submissionDate DateTime  @default(now())
+  status         String    @default("Pending Approval")
+  notes          String?
+  metadata       Json?
+  approvedBy     String?
+  approvedDate   DateTime?
+  rejectedBy     String?
+  rejectedDate   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Personnel {
+  id        String   @id @default(uuid())
+  name      String
+  role      String
+  phone     String?
+  email     String?
+  rate      Decimal? @db.Decimal(12, 2)
+  status    String   @default("Active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AgreementTemplate {
+  id        String   @id @default(uuid())
+  title     String
+  body      String
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CustomTemplate {
+  id        String   @id @default(uuid())
+  name      String
+  type      String
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  SystemAdmin
+  Manager
+  Photographer
+  Videographer
+  Editor
+  Assistant
+  Client
+  DroneOperator
+  Designer
+}

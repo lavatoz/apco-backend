@@ -23,7 +23,14 @@ import tasksRoutes from '../modules/tasks/tasks.routes';
 import approvalsRoutes from '../modules/approvals/approvals.routes';
 import personnelRoutes from '../modules/personnel/personnel.routes';
 import templatesRoutes from '../modules/templates/templates.routes';
+import eventsRoutes from '../modules/events/events.routes';
+import agreementsRoutes from '../modules/agreements/agreements.routes';
 import healthRoutes from './health';
+import { 
+  standaloneAgreementTemplatesRouter, 
+  standaloneAgreementsRouter 
+} from '../modules/standalone-agreements/standalone-agreements.routes';
+import { getClientAgreement } from '../modules/standalone-agreements/standalone-agreements.controller';
 
 const router = Router();
 
@@ -43,6 +50,7 @@ router.use('/auth', authRoutes);
 router.use('/files', fileRoutes);
 router.use('/users', usersRoutes);
 router.use('/clients', clientsRoutes);
+router.use('/events', eventsRoutes);
 router.use('/projects', projectsRoutes);
 router.use('/invoices', invoicesRoutes);
 router.use('/quotations', quotationRouter);
@@ -54,6 +62,10 @@ router.use('/tasks', tasksRoutes);
 router.use('/approvals', approvalsRoutes);
 router.use('/personnel', personnelRoutes);
 router.use('/templates', templatesRoutes);
+router.use('/agreements', agreementsRoutes);
+router.use('/standalone-agreement-templates', standaloneAgreementTemplatesRouter);
+router.use('/standalone-agreements', standaloneAgreementsRouter);
+router.get('/clients/:clientId/standalone-agreement', authenticate, getClientAgreement);
 router.use('/', healthRoutes);
 
 export default router;

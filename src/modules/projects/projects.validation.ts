@@ -18,4 +18,10 @@ export const UpdateProjectSchema = z.object({
 export const AssignStaffSchema = z.object({
   userId: z.string().uuid('Invalid user ID'),
   role: z.nativeEnum(Role),
+  eventId: z.string().optional().nullable(),
 });
+
+export const UpdateAssignedEventsSchema = z.object({
+  eventIds: z.array(z.string()),
+});
+

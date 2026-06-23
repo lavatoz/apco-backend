@@ -76,15 +76,19 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
     const { email, password } = req.body;
     const meta = extractReqMeta(req);
 
+    console.log(`[AUTH_DEBUG] Login attempt for email: ${email}`);
     // Fetch user
     const user = await prisma.user.findUnique({
       where: { email },
     });
 
     if (!user) {
+      console.log(`[AUTH_DEBUG] User not found for email: ${email}`);
       // Return ambiguous error to prevent user enumeration attacks
       throw new AppError('Invalid email or password.', 401);
     }
+
+    console.log(`[AUTH_DEBUG] User found: id=${user.id}, email=${user.email}, role=${user.role}, status=${user.status}, emailVerified=${user.emailVerified}, mustChangePassword=${user.mustChangePassword}`);
 
     // Check account lockout status
     if (user.lockedUntil && user.lockedUntil > new Date()) {
@@ -108,7 +112,9 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
       throw new AppError('This account is pending activation. Please complete setup using your invitation link.', 401);
     }
 
+    console.log(`[AUTH_DEBUG] Verifying password. Stored hash exists: ${!!user.passwordHash}`);
     const isPasswordValid = await verifyPassword(user.passwordHash, password);
+    console.log(`[AUTH_DEBUG] Password verification result: ${isPasswordValid}`);
 
     if (!isPasswordValid) {
       const newFailedAttempts = user.failedLoginAttempts + 1;

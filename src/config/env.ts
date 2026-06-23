@@ -22,6 +22,10 @@ const envSchema = z.object({
   GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON: z.string().optional().or(z.literal('')),
   // Local development: path to service account key file
   GOOGLE_SERVICE_ACCOUNT_KEY_PATH: z.string().optional().or(z.literal('')),
+  // Optional OAuth 2.0 credentials (for folder owner upload context)
+  GOOGLE_DRIVE_CLIENT_ID: z.string().optional().or(z.literal('')),
+  GOOGLE_DRIVE_CLIENT_SECRET: z.string().optional().or(z.literal('')),
+  GOOGLE_DRIVE_REFRESH_TOKEN: z.string().optional().or(z.literal('')),
   BYPASS_MFA: z.string().optional().transform((val) => val === 'true'),
 });
 

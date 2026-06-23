@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../../config/database';
-import { getDriveClient, uploadFile, downloadFileStream, deleteFile } from '../../services/google-drive.service';
+import { uploadFile, downloadFileStream, deleteFile, getOrCreateProjectFolderStructure } from '../../services/google-drive.service';
 import { logAudit, extractReqMeta } from '../../services/audit.service';
 import { logWorkflowEvent } from '../../services/workflow.service';
 import { AppError } from '../../middleware/error';
@@ -76,6 +76,7 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
     const user = req.user!;
     const file = req.file;
     const { projectId, folderType, isSecured } = req.body;
+    console.log('UPLOAD RECEIVED PROJECT ID:', projectId);
     const meta = extractReqMeta(req);
 
     if (!file) {
@@ -108,24 +109,72 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
       throw new AppError('Project not found.', 404);
     }
 
-    // Determine target folder ID based on folderType
-    let parentFolderId = project.driveFolderId || undefined;
-    if (folderType === 'Agreements' && project.agreementsFolderId) parentFolderId = project.agreementsFolderId;
-    else if (folderType === 'Quotations' && project.quotationsFolderId) parentFolderId = project.quotationsFolderId;
-    else if (folderType === 'Invoices' && project.invoicesFolderId) parentFolderId = project.invoicesFolderId;
-    else if (folderType === 'Gallery' && project.galleryFolderId) parentFolderId = project.galleryFolderId;
-    else if (folderType === 'Deliverables' && project.deliverablesFolderId) parentFolderId = project.deliverablesFolderId;
-    else if (folderType === 'Raw Uploads' && project.driveFolderId) {
-      // Find or lazy-create folder
-      try {
-        const drive = getDriveClient();
-        const q = `name = 'Raw Uploads' and mimeType = 'application/vnd.google-apps.folder' and '${project.driveFolderId}' in parents and trashed = false`;
-        const listResp = await drive.files.list({ q, fields: 'files(id)' });
-        parentFolderId = listResp.data.files?.[0]?.id || project.driveFolderId;
-      } catch {
-        parentFolderId = project.driveFolderId;
+    // Automatically ensure the hierarchical folder structure exists and reuse existing folders
+    const folderStructure = await getOrCreateProjectFolderStructure(
+      project.client.name,
+      project.name,
+      {
+        driveFolderId: project.driveFolderId,
+        agreementsFolderId: project.agreementsFolderId,
+        quotationsFolderId: project.quotationsFolderId,
+        invoicesFolderId: project.invoicesFolderId,
+        galleryFolderId: project.galleryFolderId,
+        deliverablesFolderId: project.deliverablesFolderId,
       }
+    );
+
+    // Save newly created folder IDs in database if they were updated/recreated
+    const hasFolderChanges =
+      folderStructure.driveFolderId !== project.driveFolderId ||
+      folderStructure.agreementsFolderId !== project.agreementsFolderId ||
+      folderStructure.quotationsFolderId !== project.quotationsFolderId ||
+      folderStructure.invoicesFolderId !== project.invoicesFolderId ||
+      folderStructure.galleryFolderId !== project.galleryFolderId ||
+      folderStructure.deliverablesFolderId !== project.deliverablesFolderId;
+
+    if (hasFolderChanges) {
+      await prisma.project.update({
+        where: { id: projectId },
+        data: {
+          driveFolderId: folderStructure.driveFolderId,
+          agreementsFolderId: folderStructure.agreementsFolderId,
+          quotationsFolderId: folderStructure.quotationsFolderId,
+          invoicesFolderId: folderStructure.invoicesFolderId,
+          galleryFolderId: folderStructure.galleryFolderId,
+          deliverablesFolderId: folderStructure.deliverablesFolderId,
+        }
+      });
     }
+
+    // Normalize folderType mapping from frontend to backend folders
+    let parentFolderId = folderStructure.driveFolderId;
+    if (folderType === 'Agreements') {
+      parentFolderId = folderStructure.agreementsFolderId;
+    } else if (folderType === 'Quotations') {
+      parentFolderId = folderStructure.quotationsFolderId;
+    } else if (folderType === 'Invoices') {
+      parentFolderId = folderStructure.invoicesFolderId;
+    } else if (folderType === 'Gallery' || folderType === 'Edited Photos' || folderType === 'Edited Videos') {
+      parentFolderId = folderStructure.galleryFolderId;
+    } else if (folderType === 'Deliverables') {
+      parentFolderId = folderStructure.deliverablesFolderId;
+    } else if (folderType === 'Raw Uploads' || folderType === 'Raw Photos' || folderType === 'Raw Videos') {
+      parentFolderId = folderStructure.rawUploadsFolderId;
+    }
+
+    console.log('[DEBUG UPLOAD] folderType received from request body:', folderType);
+    console.log('[DEBUG UPLOAD] folderStructure resolved:', JSON.stringify(folderStructure, null, 2));
+    console.log('[DEBUG UPLOAD] final parentFolderId selected:', parentFolderId);
+
+    let destFolderName = 'Unknown';
+    try {
+      const gDrive = require('../../services/google-drive.service').getDriveClient();
+      const folderMeta = await gDrive.files.get({ fileId: parentFolderId, fields: 'name' });
+      destFolderName = folderMeta.data.name;
+    } catch (e: any) {
+      destFolderName = `Error fetching folder name: ${e.message}`;
+    }
+    console.log('[DEBUG UPLOAD] upload destination folder name:', destFolderName);
 
     // Upload to Google Drive
     const driveFile = await uploadFile(file.buffer, file.originalname, file.mimetype, parentFolderId || undefined);
@@ -134,6 +183,7 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
     const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
 
     // Register file in DB
+    console.log('FILE SAVED PROJECT ID:', projectId);
     const fileRecord = await prisma.file.create({
       data: {
         key: `gdrive-${driveFile.id}`,
@@ -289,8 +339,8 @@ export async function downloadProjectFile(req: Request, res: Response, next: Nex
       throw new AppError('Access Denied: You do not have permission to access this file.', 403);
     }
 
-    // Clients are blocked from downloading "Raw Uploads"
-    if (user.role === Role.Client && file.category === 'Raw Uploads') {
+    // Clients are blocked from downloading Raw Uploads and Raw Videos
+    if (user.role === Role.Client && ['Raw Uploads', 'Raw Videos'].includes(file.category || '')) {
       throw new AppError('Access Denied: You do not have permission to access files in this category.', 403);
     }
 
@@ -331,7 +381,7 @@ export async function getFilesByProject(req: Request, res: Response, next: NextF
     // Verify Access
     await validateAccess(user, projectId);
 
-    const allowedClientCategories = ['Gallery', 'Deliverables', 'Invoices', 'Quotations', 'Agreements'];
+    const allowedClientCategories = ['Gallery', 'Raw Photos', 'Edited Photos', 'Edited Videos', 'Deliverables', 'Invoices', 'Quotations', 'Agreements'];
     const { category } = req.query;
 
     let targetCategory: string | undefined = undefined;
@@ -496,7 +546,7 @@ export async function getFiles(req: Request, res: Response, next: NextFunction):
       });
       const projectIds = projects.map(p => p.id);
       
-      const allowedClientCategories = ['Gallery', 'Deliverables', 'Invoices', 'Quotations', 'Agreements'];
+      const allowedClientCategories = ['Gallery', 'Raw Photos', 'Edited Photos', 'Edited Videos', 'Deliverables', 'Invoices', 'Quotations', 'Agreements'];
       if (category && !allowedClientCategories.includes(category as string)) {
         throw new AppError('Access Denied: You do not have permission to access files in this category.', 403);
       }

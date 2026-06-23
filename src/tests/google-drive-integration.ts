@@ -140,6 +140,19 @@ export async function runTests() {
   const originalWorkflowEvent = mockPrisma.workflowEvent;
   const originalStaffAssignment = mockPrisma.staffAssignment;
 
+  // Mock getOrCreateProjectFolderStructure to avoid hitting the live API during mock tests
+  const googleDriveService = require('../services/google-drive.service');
+  const originalGetOrCreate = googleDriveService.getOrCreateProjectFolderStructure;
+  googleDriveService.getOrCreateProjectFolderStructure = async () => ({
+    driveFolderId: 'folder-root',
+    agreementsFolderId: 'folder-agreements',
+    quotationsFolderId: 'folder-quotations',
+    invoicesFolderId: 'folder-invoices',
+    galleryFolderId: 'folder-gallery',
+    deliverablesFolderId: 'folder-deliv',
+    rawUploadsFolderId: 'folder-raw-uploads',
+  });
+
   // Set up mock implementations
   mockPrisma.auditLog = {
     create: async () => ({})
@@ -164,7 +177,8 @@ export async function runTests() {
 
   mockPrisma.project = {
     findFirst: async () => mockProject,
-    findUnique: async () => mockProject
+    findUnique: async () => mockProject,
+    update: async () => ({})
   };
 
   // 2. Upload Endpoint Tests
@@ -356,7 +370,8 @@ export async function runTests() {
         name: 'Wedding Event',
         clientId: 'client-rec-1',
         client: { id: 'client-rec-1', name: 'Joel', email: 'client@apco.com' }
-      })
+      }),
+      update: async () => ({})
     };
     mockPrisma.staffAssignment = {
       findFirst: async () => ({ id: 'assign-1' })
@@ -439,7 +454,8 @@ export async function runTests() {
         name: 'Wedding Event',
         clientId: 'client-rec-1',
         client: { id: 'client-rec-1', name: 'Joel', email: 'client@apco.com' }
-      })
+      }),
+      update: async () => ({})
     };
     mockPrisma.staffAssignment = {
       findMany: async () => [{ userId: 'staff-user-1' }, { userId: 'staff-user-2' }]
@@ -632,7 +648,8 @@ export async function runTests() {
     }
   });
 
-  // Restore prisma models
+  // Restore prisma models and services
+  googleDriveService.getOrCreateProjectFolderStructure = originalGetOrCreate;
   mockPrisma.file = originalFile;
   mockPrisma.project = originalProject;
   mockPrisma.auditLog = originalAuditLog;

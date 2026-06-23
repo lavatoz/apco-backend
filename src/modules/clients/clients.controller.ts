@@ -22,6 +22,11 @@ export async function getClients(req: Request, res: Response, next: NextFunction
 
     const clients = await prisma.client.findMany({
       where: whereClause,
+      include: {
+        events: {
+          orderBy: { date: 'asc' },
+        },
+      },
       orderBy: { name: 'asc' },
     });
 
@@ -41,7 +46,13 @@ export async function getClientById(req: Request, res: Response, next: NextFunct
 
     const client = await prisma.client.findFirst({
       where: { id, deletedAt: null },
+      include: {
+        events: {
+          orderBy: { date: 'asc' },
+        },
+      },
     });
+
 
     if (!client) {
       throw new AppError('Client not found.', 404);
@@ -95,10 +106,12 @@ export async function createClient(req: Request, res: Response, next: NextFuncti
     const lastName = nameParts.slice(1).join(' ') || 'User';
     const setupToken = crypto.randomBytes(32).toString('hex');
 
+    const { events, ...clientData } = body;
+
     const client = await prisma.$transaction(async (tx) => {
       // 1. Create client record
       const newClient = await tx.client.create({
-        data: body,
+        data: clientData,
       });
 
       // 2. Provision User record with Pending Activation status
@@ -117,6 +130,37 @@ export async function createClient(req: Request, res: Response, next: NextFuncti
         },
       });
 
+      // 3. Create events if any
+      if (events && events.length > 0) {
+        await tx.event.createMany({
+          data: events.map((ev: any) => ({
+            id: ev.id,
+            clientId: newClient.id,
+            name: ev.name,
+            date: new Date(ev.date),
+            startTime: ev.startTime || null,
+            endTime: ev.endTime || null,
+            progress: ev.progress || 0,
+            actualCompletedAt: ev.actualCompletedAt ? new Date(ev.actualCompletedAt) : null,
+            brideLocation: ev.brideLocation || null,
+            groomLocation: ev.groomLocation || null,
+            venueLocation: ev.venueLocation || null,
+            notes: ev.notes || null,
+            status: ev.status || 'Scheduled',
+          })),
+        });
+      }
+
+      // 4. Provision default Project record
+      await tx.project.create({
+        data: {
+          name: `${newClient.name}'s Project`,
+          status: 'Draft',
+          clientId: newClient.id,
+          stage: 'Booked',
+        },
+      });
+
       return newClient;
     });
 
@@ -127,7 +171,16 @@ export async function createClient(req: Request, res: Response, next: NextFuncti
       ...meta,
     });
 
-    res.status(201).json(client);
+    const fullCreatedClient = await prisma.client.findFirst({
+      where: { id: client.id },
+      include: {
+        events: {
+          orderBy: { date: 'asc' },
+        },
+      },
+    });
+
+    res.status(201).json(fullCreatedClient);
   } catch (error) {
     next(error);
   }
@@ -156,19 +209,21 @@ export async function updateClient(req: Request, res: Response, next: NextFuncti
       throw new AppError('Client record not found.', 404);
     }
 
+    const { events, ...clientData } = body;
+
     const client = await prisma.$transaction(async (tx) => {
       // 1. Update client record
       const updatedClient = await tx.client.update({
         where: { id },
-        data: body,
+        data: clientData,
       });
 
       // 2. Sync corresponding User record if email or name changes
-      if (body.email || body.name) {
+      if (clientData.email || clientData.name) {
         const userUpdateData: any = {};
-        if (body.email) userUpdateData.email = body.email;
-        if (body.name) {
-          const nameParts = body.name.trim().split(/\s+/);
+        if (clientData.email) userUpdateData.email = clientData.email;
+        if (clientData.name) {
+          const nameParts = clientData.name.trim().split(/\s+/);
           userUpdateData.firstName = nameParts[0] || 'Client';
           userUpdateData.lastName = nameParts.slice(1).join(' ') || 'User';
         }
@@ -185,6 +240,35 @@ export async function updateClient(req: Request, res: Response, next: NextFuncti
         });
       }
 
+      // 3. Sync events
+      if (events) {
+        // Delete all existing events for this client
+        await tx.event.deleteMany({
+          where: { clientId: id },
+        });
+
+        // Create new ones
+        if (events.length > 0) {
+          await tx.event.createMany({
+            data: events.map((ev: any) => ({
+              id: ev.id,
+              clientId: id,
+              name: ev.name,
+              date: new Date(ev.date),
+              startTime: ev.startTime || null,
+              endTime: ev.endTime || null,
+              progress: ev.progress || 0,
+              actualCompletedAt: ev.actualCompletedAt ? new Date(ev.actualCompletedAt) : null,
+              brideLocation: ev.brideLocation || null,
+              groomLocation: ev.groomLocation || null,
+              venueLocation: ev.venueLocation || null,
+              notes: ev.notes || null,
+              status: ev.status || 'Scheduled',
+            })),
+          });
+        }
+      }
+
       return updatedClient;
     });
 
@@ -195,7 +279,16 @@ export async function updateClient(req: Request, res: Response, next: NextFuncti
       ...meta,
     });
 
-    res.status(200).json(client);
+    const fullUpdatedClient = await prisma.client.findFirst({
+      where: { id: client.id },
+      include: {
+        events: {
+          orderBy: { date: 'asc' },
+        },
+      },
+    });
+
+    res.status(200).json(fullUpdatedClient);
   } catch (error) {
     next(error);
   }

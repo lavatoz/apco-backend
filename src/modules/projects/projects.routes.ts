@@ -7,11 +7,12 @@ import {
   assignStaff, 
   removeStaff, 
   deleteProject,
-  updateProjectStage
+  updateProjectStage,
+  updateStaffAssignedEvents
 } from './projects.controller';
 import { authenticate } from '../../middleware/auth';
 import { validateBody } from '../../middleware/validation';
-import { CreateProjectSchema, UpdateProjectSchema, AssignStaffSchema } from './projects.validation';
+import { CreateProjectSchema, UpdateProjectSchema, AssignStaffSchema, UpdateAssignedEventsSchema } from './projects.validation';
 
 const router = Router();
 
@@ -25,6 +26,7 @@ router.put('/:id', validateBody(UpdateProjectSchema), updateProject);
 router.put('/:id/stage', updateProjectStage);
 router.post('/:id/assign', validateBody(AssignStaffSchema), assignStaff);
 router.post('/:id/unassign', removeStaff);
+router.put('/:id/staff/:userId/events', validateBody(UpdateAssignedEventsSchema), updateStaffAssignedEvents);
 router.delete('/:id', deleteProject);
 
 export default router;

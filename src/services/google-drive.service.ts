@@ -18,9 +18,26 @@ export function getDriveClient() {
     return driveInstance;
   }
 
+  // 1. OAuth 2.0 User Credentials (primary, to bypass Service Account quota limitation on personal "My Drive" folders)
+  if (
+    env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_ID.trim() !== '' &&
+    env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_CLIENT_SECRET.trim() !== '' &&
+    env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_REFRESH_TOKEN.trim() !== ''
+  ) {
+    const oauth2Client = new google.auth.OAuth2(
+      env.GOOGLE_DRIVE_CLIENT_ID,
+      env.GOOGLE_DRIVE_CLIENT_SECRET
+    );
+    oauth2Client.setCredentials({
+      refresh_token: env.GOOGLE_DRIVE_REFRESH_TOKEN,
+    });
+    driveInstance = google.drive({ version: 'v3', auth: oauth2Client });
+    return driveInstance;
+  }
+
   let auth: InstanceType<typeof google.auth.GoogleAuth>;
 
-  // Production: use JSON credentials from environment variable
+  // 2. Fallback: Service Account (used if OAuth credentials are not fully configured)
   if (env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON && env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON.trim() !== '') {
     let credentials: object;
     try {
@@ -97,6 +114,110 @@ export async function createFolder(name: string, parentId?: string): Promise<str
 }
 
 /**
+ * Helper to check if a folder exists and is not trashed in Google Drive.
+ */
+export async function isFolderValid(folderId: string): Promise<boolean> {
+  try {
+    const drive = getDriveClient();
+    const res = await drive.files.get({
+      fileId: folderId,
+      fields: 'id, trashed',
+    });
+    return !res.data.trashed;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Helper to get an existing folder or create it under parentId.
+ */
+export async function getOrCreateFolder(name: string, parentId: string): Promise<string> {
+  const drive = getDriveClient();
+  const escapedName = name.replace(/'/g, "\\'");
+  const query = `name = '${escapedName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`;
+  
+  const list = await drive.files.list({
+    q: query,
+    spaces: 'drive',
+    fields: 'files(id)',
+  });
+
+  const folderId = list.data.files?.[0]?.id;
+  if (folderId) {
+    return folderId;
+  }
+
+  return await createFolder(name, parentId);
+}
+
+/**
+ * Ensures the full hierarchical folder structure exists for a client and project.
+ * Reuses existing folders at every level and returns the resolved folder IDs.
+ */
+export async function getOrCreateProjectFolderStructure(
+  clientName: string,
+  projectName: string,
+  existingFolderIds: {
+    driveFolderId?: string | null;
+    agreementsFolderId?: string | null;
+    quotationsFolderId?: string | null;
+    invoicesFolderId?: string | null;
+    galleryFolderId?: string | null;
+    deliverablesFolderId?: string | null;
+  } = {}
+) {
+  const rootId = env.GOOGLE_DRIVE_FOLDER_ID;
+
+  // 1. Get or create Client folder under root
+  const clientFolderId = await getOrCreateFolder(clientName, rootId);
+
+  // 2. Get or create Project folder under Client folder
+  let projectFolderId = existingFolderIds.driveFolderId;
+  if (!projectFolderId || !(await isFolderValid(projectFolderId))) {
+    projectFolderId = await getOrCreateFolder(projectName, clientFolderId);
+  }
+
+  // 3. Get or create subfolders under Project folder
+  let agreementsFolderId = existingFolderIds.agreementsFolderId;
+  if (!agreementsFolderId || !(await isFolderValid(agreementsFolderId))) {
+    agreementsFolderId = await getOrCreateFolder('Agreements', projectFolderId);
+  }
+
+  let quotationsFolderId = existingFolderIds.quotationsFolderId;
+  if (!quotationsFolderId || !(await isFolderValid(quotationsFolderId))) {
+    quotationsFolderId = await getOrCreateFolder('Quotations', projectFolderId);
+  }
+
+  let invoicesFolderId = existingFolderIds.invoicesFolderId;
+  if (!invoicesFolderId || !(await isFolderValid(invoicesFolderId))) {
+    invoicesFolderId = await getOrCreateFolder('Invoices', projectFolderId);
+  }
+
+  let galleryFolderId = existingFolderIds.galleryFolderId;
+  if (!galleryFolderId || !(await isFolderValid(galleryFolderId))) {
+    galleryFolderId = await getOrCreateFolder('Gallery', projectFolderId);
+  }
+
+  let deliverablesFolderId = existingFolderIds.deliverablesFolderId;
+  if (!deliverablesFolderId || !(await isFolderValid(deliverablesFolderId))) {
+    deliverablesFolderId = await getOrCreateFolder('Deliverables', projectFolderId);
+  }
+
+  const rawUploadsFolderId = await getOrCreateFolder('Raw Uploads', projectFolderId);
+
+  return {
+    driveFolderId: projectFolderId,
+    agreementsFolderId,
+    quotationsFolderId,
+    invoicesFolderId,
+    galleryFolderId,
+    deliverablesFolderId,
+    rawUploadsFolderId,
+  };
+}
+
+/**
  * Automatically creates client and project folder structures in Google Drive:
  * Root Folder
  *  └── Client Name
@@ -109,44 +230,7 @@ export async function createFolder(name: string, parentId?: string): Promise<str
  *            └── Raw Uploads
  */
 export async function createProjectFolderStructure(clientName: string, projectName: string) {
-  const drive = getDriveClient();
-  const rootId = env.GOOGLE_DRIVE_FOLDER_ID;
-
-  // 1. Check if client folder already exists
-  const escapedClientName = clientName.replace(/'/g, "\\'");
-  const clientQuery = `name = '${escapedClientName}' and mimeType = 'application/vnd.google-apps.folder' and '${rootId}' in parents and trashed = false`;
-  
-  const clientList = await drive.files.list({
-    q: clientQuery,
-    spaces: 'drive',
-    fields: 'files(id, name)',
-  });
-
-  let clientFolderId = clientList.data.files?.[0]?.id;
-  if (!clientFolderId) {
-    clientFolderId = await createFolder(clientName, rootId);
-  }
-
-  // 2. Create Project Folder under Client Folder
-  const projectFolderId = await createFolder(projectName, clientFolderId);
-
-  // 3. Create subfolders under Project Folder
-  const agreementsFolderId = await createFolder('Agreements', projectFolderId);
-  const quotationsFolderId = await createFolder('Quotations', projectFolderId);
-  const invoicesFolderId = await createFolder('Invoices', projectFolderId);
-  const galleryFolderId = await createFolder('Gallery', projectFolderId);
-  const deliverablesFolderId = await createFolder('Deliverables', projectFolderId);
-  const rawUploadsFolderId = await createFolder('Raw Uploads', projectFolderId);
-
-  return {
-    driveFolderId: projectFolderId,
-    agreementsFolderId,
-    quotationsFolderId,
-    invoicesFolderId,
-    galleryFolderId,
-    deliverablesFolderId,
-    rawUploadsFolderId,
-  };
+  return await getOrCreateProjectFolderStructure(clientName, projectName);
 }
 
 /**

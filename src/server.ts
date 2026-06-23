@@ -1,6 +1,42 @@
 import app from './app';
 import { env } from './config/env';
-import { checkDatabaseConnection } from './config/database';
+import { checkDatabaseConnection, prisma } from './config/database';
+
+async function repairMissingProjects() {
+  try {
+    console.log('🔧 Running project association health check...');
+    const clientsWithoutProjects = await prisma.client.findMany({
+      where: {
+        deletedAt: null,
+        projects: {
+          none: {
+            deletedAt: null
+          }
+        }
+      }
+    });
+
+    if (clientsWithoutProjects.length > 0) {
+      console.log(`🔧 Found ${clientsWithoutProjects.length} client(s) with missing project records. Provisioning default projects...`);
+      for (const client of clientsWithoutProjects) {
+        await prisma.project.create({
+          data: {
+            name: `${client.name}'s Project`,
+            status: 'Draft',
+            clientId: client.id,
+            stage: 'Booked'
+          }
+        });
+        console.log(`✅ Provisioned default project for client: ${client.name} (ID: ${client.id})`);
+      }
+      console.log('✨ Project association repair complete.');
+    } else {
+      console.log('✅ All clients have corresponding project records. Database is healthy.');
+    }
+  } catch (error) {
+    console.error('❌ Failed to run project association health check:', error);
+  }
+}
 
 async function startServer() {
   console.log('🚀 Initializing APCO Backend Foundation...');
@@ -9,6 +45,7 @@ async function startServer() {
   const dbConnected = await checkDatabaseConnection();
   if (dbConnected) {
     console.log('✨ Database connection verified successfully.');
+    await repairMissingProjects();
   } else {
     console.warn('⚠️ Database connection verification failed. App will start, but db operations will fail.');
   }

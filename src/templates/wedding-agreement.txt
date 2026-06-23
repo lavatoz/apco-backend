@@ -1,0 +1,71 @@
+WEDDING PHOTOGRAPHY & VIDEOGRAPHY AGREEMENT
+
+EVENT DETAILS
+Client Name(s): {{CLIENT_NAME}}
+Booking For (Main Event): {{EVENT_NAME}}
+Main Event Date: {{EVENT_DATE}}
+Agreement Date: {{TODAY_DATE}}
+
+FINANCIAL DETAILS
+Total Amount: {{TOTAL_AMOUNT}}
+Advance Amount: {{ADVANCE_AMOUNT}}
+Balance Amount: {{BALANCE_AMOUNT}}
+
+HOW WE WORK: SERVICE TERMS & CONDITIONS
+
+1. Booking & Payment Policy
+● Advance: To confirm the booking and secure the date, a non-refundable advance amount—as specified in the quotation or invoice—must be paid.
+● Main Payment: The payment schedule and milestone amounts must be cleared strictly as specified in the quotation or invoice provided to the client.
+● Final Settlement: The remaining balance as per the invoice is strictly due on the day the final outputs, including the album, are handed over. The team will notify the client a few days prior to the final delivery so that the final payment can be arranged in advance. Even if work is completed earlier than the expected timeline, the client must be ready to clear the payment upon delivery.
+● Extra Charges: Any additional costs incurred for extended album leaflets or newly requested services will be collected either prior to the service, immediately after the event, or added to the final settlement.
+
+2. Delivery Timeline
+● Standard Timeline & Delays: The timelines provided below represent our standard delivery schedules. Some deliverable dates could change due to natural reasons or unforeseen circumstances. If there is any such unexpected delay, our team will proactively inform the client.
+● Social Media Highlights & Reels: Highlight photos will be delivered on the day of the event or the following day. Certain video deliverables like Reels, Highlights, or Documentaries are typically delivered within 1 to 2 weeks. This timeline is subject to change, but our team will make the absolute maximum effort to provide them as early as possible. If there are any schedule changes or unexpected delays, we will notify the client proactively.
+● Graded Photos: The remaining key photos will be color-graded and delivered within one week.
+● Final Delivery: All deliverables, including videos, reels, and the physical album, can be handed over anywhere from the 1st week up to a maximum of 14 weeks from the event date. While it may occasionally take the full 14 weeks, our team will make the absolute maximum effort to work as fast as possible without any unnecessary delays.
+
+3. Editing, Photo Selection & Corrections
+● Photo Selection & Album Design: Our team will manually select the best shots for the couple and individual portraits. However, for family and guest photos, we may send a gallery to the client for sorting. While it is not mandatory in every single case, when required, the client must choose their preferred family photos. The official timeline for album design will strictly begin only from the date the client submits their final selected photos.
+● Album Corrections: Once the initial layout is ready, a maximum of 1 or 2 rounds of corrections (adding/removing photos) are permitted. Once confirmed, it will be color-graded and sent for printing. Printing and delivery will take 3 to 15 days. Extra album leaflets will incur additional charges starting from a minimum of ₹250 per leaflet (Charges may apply depending on the specific package and design quality).
+● Video Editing: Song suggestions for the video editing must be provided by the client on or before the event day. The team will make the maximum effort to use the suggested tracks; however, if a song does not suit the flow or style of the video, it will not be used. Songs cannot be changed once editing is complete.
+● Artistic Control: While the team will try to accommodate requests, specific poses cannot be guaranteed. The final selection of the best shots and overall creative control remains strictly with the photography/videography team.
+
+4. Data Storage & Backup
+● RAW photos and videos, along with the final output data, will be uploaded to Google Photos for lifetime access. However, RAW files (photos and videos) will only be provided if agreed upon and explicitly mentioned in the quotation.
+● Client Backup: It is the client's full responsibility to download and keep personal backups of all files.
+● If the client requires the data in a physical hard drive, they must provide the hard drive or cover the cost so it can be copied and provided directly to the client.
+
+5. Location, Logistics & Permission
+● Location & Travel Charges: Package pricing is originally calculated based on the main event venue and mutually convenient, nearby shoot locations. If a location is chosen that requires extensive travel, significant extra time, or is located far away (especially if decided after the initial booking), additional travel and time charges will apply.
+● If our team chooses the photoshoot location, we will handle the permissions, but any shoot fees or entry charges must be borne by the client. The client must arrange prior permissions for locations chosen by them.
+● The client agrees to provide adequate meals for the technical crew during the event coverage. If the client is unable to arrange or provide food for the crew, they must strictly inform the team beforehand so alternative arrangements can be made.
+
+6. Exclusivity, Crew Safety & Issue Resolution
+● The assigned crew will have absolute control over the photography and videography for the event. The client must ensure guests or unauthorized professionals do not obstruct the team or interfere with their duties.
+● The client must provide a safe working environment. The team holds the right to stop work in case of any crew harassment or unsafe conditions.
+● Issue Resolution: If the client anticipates any potential risks or problems, or if they face any difficulties from the crew's side, they must inform the Team Lead in advance or exactly when the issue occurs. This will allow the team to take appropriate decisions and actions immediately.
+
+7. Overtime & Extra Services
+● Our standard coverage spans around 7 to 8 hours depending upon the work schedule. If the event extends beyond this, extra overtime charges may apply. We handle overtime understandingly—meaning we evaluate the situational workflow, and it is not always strictly charged (charges are evaluated on a case-by-case basis depending on the extent of the delay and the additional effort required). However, if extra hours are known or planned beforehand, the client must inform the team in advance. If unexpected overtime occurs on the event day and warrants an extra charge, a crew member will actively notify the client on-site, and the charges will be added to the final payment settlement.
+
+8. Cancellation & Rescheduling
+● Cancellation: If the event is canceled, the advance paid is non-refundable. Additionally, non-refundable advances paid by the team to other personnel or vendors will also not be returned.
+● Rescheduling: If the event has to be rescheduled, the advance will be adjusted to the new date only if the team’s schedule allows. Otherwise, the advance is generally non-refundable, though we may review the situation and potentially offer a partial or full refund depending on the circumstances.
+
+9. Promotional Rights & Privacy
+● The works may be used for the portfolios, websites, or social media promotions of the Service Provider and the parent company, Artisans Production Company, or any of its subsidiaries. This creative promotional right remains with Artisans Production Company for all time and across any period in the future.
+● If the client does not wish for their photos or videos to be shared publicly, they must strictly inform the team beforehand so their privacy can be fully respected.
+
+10. Privacy & Data Sharing
+● The cloud storage link will be shared exclusively with the main client. The team holds no responsibility or liability if the client shares this link with third parties.
+
+11. Service Verification & Refunds
+● The client has the right to request a refund for any specific services or items explicitly mentioned in the invoice or quotation that were not provided.
+● It is the sole right and responsibility of the client to cross-check and ensure that all deliverables and services promised have been fully received. The client must exercise this right to verify everything before or at the time of final delivery.
+● Any missing items or unfulfilled services must be reported either before or exactly on the day of the final delivery. If the client fails to notify us by this time, the team will hold absolutely no responsibility or liability for any claims made after the final delivery date.
+
+I have read, understand and agree to the terms and conditions of this Agreement.
+
+Service Provider Signature: __________________   Date: __________________
+Client Signature: __________________           Date: __________________

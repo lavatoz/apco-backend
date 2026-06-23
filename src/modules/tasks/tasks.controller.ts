@@ -24,6 +24,15 @@ export async function getTasks(req: Request, res: Response, next: NextFunction):
       }
       tasks = await prisma.task.findMany({
         where: { clientId: client.id },
+        include: { 
+          event: true,
+          client: true,
+          project: {
+            include: {
+              staffAssignments: true
+            }
+          }
+        },
         orderBy: { dueDate: 'asc' },
       });
     } else if (user.role !== Role.SystemAdmin && user.role !== Role.Manager) {
@@ -40,11 +49,29 @@ export async function getTasks(req: Request, res: Response, next: NextFunction):
             { projectId: { in: projectIds } },
           ],
         },
+        include: { 
+          event: true,
+          client: true,
+          project: {
+            include: {
+              staffAssignments: true
+            }
+          }
+        },
         orderBy: { dueDate: 'asc' },
       });
     } else {
       // Admin/Manager: Full access
       tasks = await prisma.task.findMany({
+        include: { 
+          event: true,
+          client: true,
+          project: {
+            include: {
+              staffAssignments: true
+            }
+          }
+        },
         orderBy: { dueDate: 'asc' },
       });
     }
@@ -65,6 +92,7 @@ export async function getTaskById(req: Request, res: Response, next: NextFunctio
 
     const task = await prisma.task.findUnique({
       where: { id },
+      include: { event: true },
     });
 
     if (!task) {
@@ -107,17 +135,43 @@ export async function createTask(req: Request, res: Response, next: NextFunction
       throw new AppError('Only administrators or managers can create tasks manually.', 403);
     }
 
+    let assignedUserId = body.assignedUserId || null;
+    let assignee = body.assignee || 'Unassigned';
+
+    if (body.projectId && body.eventId && !assignedUserId) {
+      const assignment = await prisma.staffAssignment.findFirst({
+        where: {
+          projectId: body.projectId,
+          eventIds: { has: body.eventId },
+        },
+        include: { user: true },
+      });
+      if (assignment) {
+        assignedUserId = assignment.userId;
+        assignee = `${assignment.user.firstName} ${assignment.user.lastName}`.trim();
+      }
+    }
+
+    if (assignedUserId && (!assignee || assignee === 'Unassigned')) {
+      const u = await prisma.user.findUnique({
+        where: { id: assignedUserId },
+      });
+      if (u) {
+        assignee = `${u.firstName} ${u.lastName}`.trim();
+      }
+    }
+
     const task = await prisma.task.create({
       data: {
         title: body.title,
-        assignee: body.assignee || 'Unassigned',
+        assignee,
         dueDate: new Date(body.dueDate),
         status: body.status || 'Pending',
         brand: body.brand,
         priority: body.priority || 'High',
         clientId: body.clientId || null,
         projectId: body.projectId || null,
-        assignedUserId: body.assignedUserId || null,
+        assignedUserId,
         eventId: body.eventId || null,
       },
     });
@@ -167,25 +221,66 @@ export async function updateTask(req: Request, res: Response, next: NextFunction
     // Role validation
     const isAdminOrManager = user.role === Role.SystemAdmin || user.role === Role.Manager;
     const isAssigned = task.assignedUserId === user.id;
+    let isProjectStaff = false;
 
-    if (!isAdminOrManager && !isAssigned) {
+    if (!isAdminOrManager && !isAssigned && task.projectId) {
+      const assignment = await prisma.staffAssignment.findFirst({
+        where: {
+          userId: user.id,
+          projectId: task.projectId,
+        },
+      });
+      if (assignment) {
+        isProjectStaff = true;
+      }
+    }
+
+    if (!isAdminOrManager && !isAssigned && !isProjectStaff) {
       throw new AppError('You do not have permission to modify this task.', 403);
     }
 
     // Prepare update data: Staff can only update status
     let updateData: any = {};
     if (isAdminOrManager) {
+      let assignedUserId = body.assignedUserId !== undefined ? body.assignedUserId : task.assignedUserId;
+      let assignee = body.assignee !== undefined ? body.assignee : task.assignee;
+      const projectId = body.projectId !== undefined ? body.projectId : task.projectId;
+      const eventId = body.eventId !== undefined ? body.eventId : task.eventId;
+
+      if (projectId && eventId && !assignedUserId) {
+        const assignment = await prisma.staffAssignment.findFirst({
+          where: {
+            projectId,
+            eventIds: { has: eventId },
+          },
+          include: { user: true },
+        });
+        if (assignment) {
+          assignedUserId = assignment.userId;
+          assignee = `${assignment.user.firstName} ${assignment.user.lastName}`.trim();
+        }
+      }
+
+      if (assignedUserId && (!assignee || assignee === 'Unassigned')) {
+        const u = await prisma.user.findUnique({
+          where: { id: assignedUserId },
+        });
+        if (u) {
+          assignee = `${u.firstName} ${u.lastName}`.trim();
+        }
+      }
+
       updateData = {
         title: body.title !== undefined ? body.title : task.title,
-        assignee: body.assignee !== undefined ? body.assignee : task.assignee,
+        assignee,
         dueDate: body.dueDate !== undefined ? new Date(body.dueDate) : task.dueDate,
         status: body.status !== undefined ? body.status : task.status,
         brand: body.brand !== undefined ? body.brand : task.brand,
         priority: body.priority !== undefined ? body.priority : task.priority,
         clientId: body.clientId !== undefined ? body.clientId : task.clientId,
-        projectId: body.projectId !== undefined ? body.projectId : task.projectId,
-        assignedUserId: body.assignedUserId !== undefined ? body.assignedUserId : task.assignedUserId,
-        eventId: body.eventId !== undefined ? body.eventId : task.eventId,
+        projectId,
+        assignedUserId,
+        eventId,
       };
     } else {
       updateData = {

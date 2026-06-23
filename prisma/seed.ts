@@ -13,8 +13,8 @@ async function main() {
 
   console.log('🌱 Starting database seeding...');
 
-  const adminEmail = 'admin@apco';
-  const defaultPassword = '123456';
+  const adminEmail = 'admin@apco.local';
+  const defaultPassword = 'ApcoAdminPassword123!';
 
   // Check if admin user already exists
   const existingAdmin = await prisma.user.findUnique({

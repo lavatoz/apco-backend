@@ -114,9 +114,27 @@ export async function runTests() {
   const originalDocument = mockPrisma.standaloneAgreementDocument;
   const originalClient = mockPrisma.client;
   const originalAuditLog = mockPrisma.auditLog;
+  const originalProject = mockPrisma.project;
+  const originalQuotation = mockPrisma.quotation;
+  const originalInvoice = mockPrisma.invoice;
+  const originalCompanyProfile = mockPrisma.companyProfile;
+  const originalPayment = mockPrisma.payment;
+  const originalTask = mockPrisma.task;
+  const originalEvent = mockPrisma.event;
+  const originalTransaction = mockPrisma.$transaction;
 
   // Mock models
   mockPrisma.auditLog = { create: async () => ({}) };
+  mockPrisma.$transaction = async (callback: (tx: any) => Promise<any>) => {
+    return callback(mockPrisma);
+  };
+  mockPrisma.project = { findFirst: async () => null };
+  mockPrisma.quotation = { findFirst: async () => null };
+  mockPrisma.invoice = { findFirst: async () => null };
+  mockPrisma.companyProfile = { findFirst: async () => null };
+  mockPrisma.payment = { findMany: async () => [] };
+  mockPrisma.task = { findFirst: async () => null };
+  mockPrisma.event = { findFirst: async () => null };
 
   const testAdminUser = { id: 'admin-1', email: 'admin@apco.com', role: Role.SystemAdmin };
   const testClientUser = { id: 'client-user-1', email: 'client@apco.com', role: Role.Client };
@@ -124,7 +142,7 @@ export async function runTests() {
   const testPhotographer = { id: 'photo-1', email: 'photo@apco.com', role: Role.Photographer };
 
   const mockClientRecord = { id: 'client-rec-1', name: 'Joel', email: 'client@apco.com', deletedAt: null };
-  const mockAgreementRecord = { id: 'agr-1', clientId: 'client-rec-1', templateId: 'tpl-1', title: 'NDA', status: 'PENDING' };
+  const mockAgreementRecord = { id: 'agr-1', clientId: 'client-rec-1', templateId: 'tpl-1', title: 'NDA', status: 'PENDING', createdAt: new Date() };
   const mockDocumentRecord = { id: 'doc-1', agreementId: 'agr-1', documentType: DocumentType.AADHAAR, fileUrl: '/api/standalone-agreements/documents/download/file-123.pdf' };
 
   try {
@@ -487,6 +505,7 @@ export async function runTests() {
           template: { id: 'tpl-1', name: 'Standard Terms', version: '1.0' },
           signatures: [{ signerName: 'Joel', signatureImageUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', signedAt: new Date() }],
           documents: [mockDocumentRecord],
+          linkedQuoteId: 'quo-1',
           pdfFilePath: mockPdfPath,
           pdfGeneratedAt: new Date(),
         }),
@@ -527,9 +546,13 @@ export async function runTests() {
           testClientUser
         );
         await generateStandalonePdf(req, res, next);
-        const { statusCode } = results();
+        const { statusCode, nextError } = results();
 
         if (statusCode !== 200 || !databaseUpdated || !writtenBytes) {
+          if (nextError) {
+            restoreLogs();
+            console.error('ST_GEN_ERR:', nextError);
+          }
           throw new Error('Failed to generate signed PDF.');
         }
 
@@ -559,6 +582,14 @@ export async function runTests() {
     mockPrisma.standaloneAgreementDocument = originalDocument;
     mockPrisma.client = originalClient;
     mockPrisma.auditLog = originalAuditLog;
+    mockPrisma.project = originalProject;
+    mockPrisma.quotation = originalQuotation;
+    mockPrisma.invoice = originalInvoice;
+    mockPrisma.companyProfile = originalCompanyProfile;
+    mockPrisma.payment = originalPayment;
+    mockPrisma.task = originalTask;
+    mockPrisma.event = originalEvent;
+    mockPrisma.$transaction = originalTransaction;
   }
 
   if (failed > 0) {

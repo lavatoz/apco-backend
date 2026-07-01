@@ -15,6 +15,8 @@ const envSchema = z.object({
   R2_SECRET_KEY: z.string().optional().or(z.literal('')),
   R2_BUCKET: z.string().optional().or(z.literal('')),
   RESEND_API_KEY: z.string().optional().or(z.literal('')),
+  RESEND_FROM_EMAIL: z.string().optional().or(z.literal('')),
+  RESEND_LOGO_URL: z.string().optional().or(z.literal('')),
   APP_URL: z.string().url('APP_URL must be a valid URL'),
   CORS_ORIGIN: z.string().min(1, 'CORS_ORIGIN is required'),
   GOOGLE_DRIVE_FOLDER_ID: z.string().min(1, 'GOOGLE_DRIVE_FOLDER_ID is required'),

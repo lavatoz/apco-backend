@@ -27,7 +27,6 @@ import {
   changePasswordSchema,
   passwordResetRequestSchema,
   passwordResetConfirmSchema,
-  emailVerificationConfirmSchema,
   resendVerificationSchema,
   activateClientSchema
 } from './auth.validation';
@@ -46,8 +45,8 @@ router.post('/password-reset/request', authLimiter, validateBody(passwordResetRe
 router.post('/password-reset/confirm', authLimiter, validateBody(passwordResetConfirmSchema), confirmPasswordReset);
 
 // Email Verification Routes
-// Public confirm (token in body)
-router.post('/email-verification/confirm', validateBody(emailVerificationConfirmSchema), confirmEmailVerification);
+// Public confirm (token in query string)
+router.get('/email-verification/confirm', confirmEmailVerification);
 // Public resend (rate-limited, email only, always returns generic response)
 router.post('/email-verification/resend', authLimiter, validateBody(resendVerificationSchema), resendVerificationEmailPublic);
 

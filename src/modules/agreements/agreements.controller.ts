@@ -1,12 +1,39 @@
 import { Request, Response, NextFunction } from 'express';
+import fs from 'fs';
+import path from 'path';
 import crypto from 'crypto';
 import { prisma } from '../../config/database';
 import { generateAgreementPdf } from '../../services/agreement-pdf.service';
-import { uploadFile, getOrCreateProjectFolderStructure } from '../../services/google-drive.service';
+import { getOrCreateProjectFolderStructure } from '../../services/google-drive.service';
 import { logAudit, extractReqMeta } from '../../services/audit.service';
 import { logWorkflowEvent } from '../../services/workflow.service';
 import { AppError } from '../../middleware/error';
 import { Role } from '@prisma/client';
+import { aahaLogoBase64, tinyToesLogoBase64 } from '../../services/default-logo';
+
+function extractBrideGroomNames(projectName: string, clientName: string): { brideName: string; groomName: string } {
+  const cleanProjectName = projectName
+    .replace(/wedding/gi, '')
+    .replace(/photography/gi, '')
+    .replace(/videography/gi, '')
+    .trim();
+
+  const splitRegex = /\s+(?:weds|&|and|\+)\s+/i;
+  if (splitRegex.test(cleanProjectName)) {
+    const parts = cleanProjectName.split(splitRegex);
+    if (parts.length >= 2) {
+      return {
+        brideName: parts[0].trim(),
+        groomName: parts[1].trim(),
+      };
+    }
+  }
+
+  return {
+    brideName: clientName,
+    groomName: 'N/A',
+  };
+}
 
 /**
  * POST /api/agreements/generate/:projectId
@@ -115,45 +142,88 @@ export async function generateProjectAgreement(req: Request, res: Response, next
       year: 'numeric',
     });
 
+    // Resolve active brand profile and logo
+    let brandProfile = null;
+    if (quotation?.brandId) {
+      brandProfile = await prisma.companyProfile.findFirst({
+        where: { id: quotation.brandId, deletedAt: null },
+      });
+    }
+
+    if (!brandProfile && quotation?.brand) {
+      brandProfile = await prisma.companyProfile.findFirst({
+        where: { companyName: quotation.brand, deletedAt: null },
+      });
+    }
+
+    const activeBrandName = brandProfile?.companyName || quotation?.brand || undefined;
+
+    // Fetch default company profile
+    const companyProfile = await prisma.companyProfile.findFirst({
+      where: { isDefault: true, deletedAt: null },
+    });
+
+    let companyLogoUrl: string | undefined = undefined;
+
+    if (brandProfile?.logo) {
+      companyLogoUrl = brandProfile.logo;
+    } else if (companyProfile?.logo) {
+      companyLogoUrl = companyProfile.logo;
+    } else if (activeBrandName) {
+      const normalized = activeBrandName.toLowerCase();
+      if (normalized.includes('aaha')) {
+        companyLogoUrl = aahaLogoBase64;
+      } else if (normalized.includes('tiny toes')) {
+        companyLogoUrl = tinyToesLogoBase64;
+      }
+    }
+
+    const companyName = brandProfile?.companyName || companyProfile?.companyName || 'Artisans Production Company';
+    const companyTagline = brandProfile?.tagline || companyProfile?.tagline || undefined;
+    const companyPhone = brandProfile?.phone || companyProfile?.phone || undefined;
+    const companyEmail = brandProfile?.email || companyProfile?.email || undefined;
+    const companyAddress = brandProfile?.address || companyProfile?.address || undefined;
+    const primaryColor = brandProfile?.primaryColor || companyProfile?.primaryColor || undefined;
+
+    // Resolve client event for venue details
+    let resolvedEvent = taskWithEvent?.event || null;
+    if (!resolvedEvent) {
+      resolvedEvent = await prisma.event.findFirst({
+        where: { clientId: project.clientId },
+        orderBy: { date: 'asc' },
+      });
+    }
+
+    const parsedNames = extractBrideGroomNames(project.name, project.client.name);
+    const brideName = req.body.brideName || parsedNames.brideName;
+    const groomName = req.body.groomName || parsedNames.groomName;
+    const venue = req.body.venue || resolvedEvent?.venueLocation || 'N/A';
+    const quotationNumber = req.body.quotationNumber || quotation?.quotationNumber || 'N/A';
+    const invoiceNumber = req.body.invoiceNumber || invoice?.invoiceNumber || 'N/A';
+
     // 6. Generate PDF Buffer
     const pdfBuffer = await generateAgreementPdf({
       clientName,
+      brideName,
+      groomName,
       eventName,
       eventDate,
+      venue,
       totalAmount: formattedTotal,
       advanceAmount: formattedAdvance,
       balanceAmount: formattedBalance,
       todayDate,
+      quotationNumber,
+      invoiceNumber,
+      companyName,
+      companyTagline,
+      companyLogoUrl,
+      companyPhone,
+      companyEmail,
+      companyAddress,
+      primaryColor,
+      templateVersion: quotation?.templateVersion || invoice?.templateVersion || '1.0',
     });
-
-    // 7. Ensure GDrive Project Folder exists & resolve Agreements folder
-    const folderStructure = await getOrCreateProjectFolderStructure(
-      project.client.name,
-      project.name,
-      {
-        driveFolderId: project.driveFolderId,
-        agreementsFolderId: project.agreementsFolderId,
-        quotationsFolderId: project.quotationsFolderId,
-        invoicesFolderId: project.invoicesFolderId,
-        galleryFolderId: project.galleryFolderId,
-        deliverablesFolderId: project.deliverablesFolderId,
-      }
-    );
-
-    // Save newly created folder IDs in database if they were updated
-    const hasFolderChanges =
-      folderStructure.driveFolderId !== project.driveFolderId ||
-      folderStructure.agreementsFolderId !== project.agreementsFolderId;
-
-    if (hasFolderChanges) {
-      await prisma.project.update({
-        where: { id: projectId },
-        data: {
-          driveFolderId: folderStructure.driveFolderId,
-          agreementsFolderId: folderStructure.agreementsFolderId,
-        },
-      });
-    }
 
     // 8. Generate atomic counter-based AGR agreement number: AGR-{YEAR}-{SEQUENCE}
     const year = new Date().getFullYear();
@@ -169,19 +239,67 @@ export async function generateProjectAgreement(req: Request, res: Response, next
     const agreementNumber = `AGR-${year}-${formattedSeq}`;
 
     const fileName = `Agreement_${agreementNumber}_${clientName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+    const relativeLocalPath = `uploads/agreements/pdfs/${fileName}`;
+    const absoluteLocalPath = path.resolve(process.cwd(), relativeLocalPath);
 
-    // 9. Upload PDF buffer to Google Drive Agreements subfolder
-    const driveFile = await uploadFile(
-      pdfBuffer,
-      fileName,
-      'application/pdf',
-      folderStructure.agreementsFolderId || undefined
-    );
+    // Save PDF locally as primary storage source
+    const dirPath = path.dirname(absoluteLocalPath);
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+    fs.writeFileSync(absoluteLocalPath, pdfBuffer);
 
-    // 10. Register generated PDF file in File table
+    // Optional Google Drive upload (isolated try/catch)
+    let driveFile: any = null;
+    let agreementsFolderId = project.agreementsFolderId;
+    try {
+      const folderStructure = await getOrCreateProjectFolderStructure(
+        project.client.name,
+        project.name,
+        {
+          driveFolderId: project.driveFolderId,
+          agreementsFolderId: project.agreementsFolderId,
+          quotationsFolderId: project.quotationsFolderId,
+          invoicesFolderId: project.invoicesFolderId,
+          galleryFolderId: project.galleryFolderId,
+          deliverablesFolderId: project.deliverablesFolderId,
+        }
+      );
+
+      const hasFolderChanges =
+        folderStructure.driveFolderId !== project.driveFolderId ||
+        folderStructure.agreementsFolderId !== project.agreementsFolderId;
+
+      if (hasFolderChanges) {
+        await prisma.project.update({
+          where: { id: projectId },
+          data: {
+            driveFolderId: folderStructure.driveFolderId,
+            agreementsFolderId: folderStructure.agreementsFolderId,
+          },
+        });
+      }
+      agreementsFolderId = folderStructure.agreementsFolderId;
+    } catch (folderErr) {
+      console.error('[Agreement PDF] Google Drive folder resolution failed or optional skipped:', folderErr);
+    }
+
+    try {
+      const googleDriveService = require('../../services/google-drive.service');
+      driveFile = await googleDriveService.uploadFile(
+        pdfBuffer,
+        fileName,
+        'application/pdf',
+        agreementsFolderId || undefined
+      );
+    } catch (uploadErr) {
+      console.error('[Agreement PDF] Google Drive upload failed or optional skipped:', uploadErr);
+    }
+
+    // Register generated PDF file in File table with local file path as key
     const fileRecord = await prisma.file.create({
       data: {
-        key: `gdrive-${driveFile.id}`,
+        key: relativeLocalPath,
         originalName: fileName,
         mimeType: 'application/pdf',
         size: pdfBuffer.length,
@@ -189,13 +307,13 @@ export async function generateProjectAgreement(req: Request, res: Response, next
         isSecured: false,
         projectId,
         userId: user.id,
-        googleDriveFileId: driveFile.id,
-        googleDriveViewLink: driveFile.webViewLink,
+        googleDriveFileId: driveFile?.id || null,
+        googleDriveViewLink: driveFile?.webViewLink || null,
         category: 'Agreements',
       },
     });
 
-    // 11. Create Agreement record in status 'Generated'
+    // Create Agreement record in status 'Generated'
     const agreement = await prisma.agreement.create({
       data: {
         agreementNumber,
@@ -206,7 +324,7 @@ export async function generateProjectAgreement(req: Request, res: Response, next
       },
     });
 
-    // 12. Write workflow timeline and audit logs
+    // Write workflow timeline and audit logs
     await logWorkflowEvent({
       projectId,
       eventType: 'AGREEMENT_GENERATED',
@@ -221,7 +339,7 @@ export async function generateProjectAgreement(req: Request, res: Response, next
       ...meta,
     });
 
-    // 13. Return Generated metadata
+    // Return Generated metadata
     res.status(201).json({
       success: true,
       agreementId: agreement.id,
@@ -229,7 +347,7 @@ export async function generateProjectAgreement(req: Request, res: Response, next
       status: agreement.status,
       fileId: fileRecord.id,
       fileName: fileRecord.originalName,
-      viewLink: driveFile.webViewLink,
+      viewLink: driveFile?.webViewLink || null,
     });
   } catch (error) {
     next(error);

@@ -163,9 +163,22 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
         details: { message: 'Login blocked: email address not verified.' },
         ...meta,
       });
+
+      // Generate a fresh verification token
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = hashToken(rawToken);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { verificationToken: tokenHash },
+      });
+
+      // Send the verification email and wait for it to complete
+      await sendVerificationEmail(user.email, rawToken);
+
       res.status(403).json({
         emailNotVerified: true,
-        message: 'Your email address has not been verified. Please check your inbox or request a new verification email.',
+        message: 'Your email address has not been verified. A fresh verification link has been sent to your inbox.',
       });
       return;
     }
@@ -797,8 +810,44 @@ export async function requestEmailVerification(req: Request, res: Response, next
  * Endpoint: Confirm Email Verification
  */
 export async function confirmEmailVerification(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const frontendBaseUrl = env.CORS_ORIGIN ? env.CORS_ORIGIN.split(',')[0].trim() : 'http://localhost:5173';
+  
+  const renderErrorPage = (message: string) => {
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Email Verification Failed</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f3f4f6; }
+          .card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); text-align: center; max-width: 400px; width: 90%; }
+          h1 { color: #ef4444; font-size: 24px; margin-top: 0; margin-bottom: 16px; }
+          p { color: #4b5563; font-size: 16px; margin-bottom: 24px; line-height: 1.5; }
+          .btn { display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; transition: background-color 0.2s; }
+          .btn:hover { background-color: #2563eb; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h1>Verification Failed</h1>
+          <p>${message}</p>
+          <a href="${frontendBaseUrl}/login" class="btn">Go to Login</a>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
   try {
-    const { token } = req.body;
+    const token = req.query.token;
+    
+    if (!token || typeof token !== 'string') {
+      res.status(400).send(renderErrorPage('The verification token is missing or invalid.'));
+      return;
+    }
+
     const meta = extractReqMeta(req);
     const tokenHash = hashToken(token);
 
@@ -809,14 +858,15 @@ export async function confirmEmailVerification(req: Request, res: Response, next
     });
 
     if (!user) {
-      throw new AppError('Invalid or expired email verification token.', 400);
+      res.status(400).send(renderErrorPage('The verification link is invalid, expired, or has already been used.'));
+      return;
     }
 
     await prisma.user.update({
       where: { id: user.id },
       data: {
         emailVerified: true,
-        verificationToken: null,
+        verificationToken: null, // Clear token to prevent reuse
       },
     });
 
@@ -826,13 +876,13 @@ export async function confirmEmailVerification(req: Request, res: Response, next
       ...meta,
     });
 
-    res.status(200).json({
-      message: 'Your email has been successfully verified.',
-    });
+    // Redirect to the frontend login page with a success query param
+    res.redirect(`${frontendBaseUrl}/login?verified=true`);
   } catch (error) {
     next(error);
   }
 }
+
 
 /**
  * Endpoint: Public Resend Email Verification
@@ -840,6 +890,7 @@ export async function confirmEmailVerification(req: Request, res: Response, next
  * Rate-limited. Accepts email only. Always returns generic success to prevent enumeration.
  */
 export async function resendVerificationEmailPublic(req: Request, res: Response, next: NextFunction): Promise<void> {
+  console.log('[DEBUG] ENTER resendVerificationEmailPublic');
   try {
     const { email } = req.body;
     const meta = extractReqMeta(req);
@@ -848,12 +899,18 @@ export async function resendVerificationEmailPublic(req: Request, res: Response,
       where: { email },
     });
 
+    console.log(`[DEBUG] User lookup result: ${user ? 'Found user ID ' + user.id : 'User not found'}`);
+    if (user) {
+      console.log(`[DEBUG] emailVerified value: ${user.emailVerified}`);
+    }
+
     // Generic response prevents email enumeration
     const genericResponse = {
       message: 'If an account exists with that email and is not yet verified, a new verification email has been sent.',
     };
 
     if (!user || user.emailVerified) {
+      console.log(`[DEBUG] Skipping email verification sending. Condition met: ${!user ? 'user_not_found' : 'user_already_verified'}`);
       // Timing attack countermeasure — consistent delay
       await new Promise((resolve) => setTimeout(resolve, 250));
       res.status(200).json(genericResponse);
@@ -864,12 +921,16 @@ export async function resendVerificationEmailPublic(req: Request, res: Response,
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = hashToken(rawToken);
 
+    console.log(`[DEBUG] verification token generated: ${rawToken}`);
+
     await prisma.user.update({
       where: { id: user.id },
       data: { verificationToken: tokenHash },
     });
 
+    console.log('[DEBUG] BEFORE sendVerificationEmail()');
     await sendVerificationEmail(user.email, rawToken);
+    console.log('[DEBUG] AFTER sendVerificationEmail()');
 
     await logAudit({
       userId: user.id,
@@ -880,6 +941,7 @@ export async function resendVerificationEmailPublic(req: Request, res: Response,
 
     res.status(200).json(genericResponse);
   } catch (error) {
+    console.error('[DEBUG] Error inside resendVerificationEmailPublic:', error);
     next(error);
   }
 }

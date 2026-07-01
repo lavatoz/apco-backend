@@ -38,6 +38,8 @@ model User {
   tasks               Task[]
   linkedClient        Client?           @relation(fields: [linkedClientId], references: [id])
   sessions            UserSession[]
+  workflowStages      WorkflowStage[]
+  workflowActivities  WorkflowActivity[]
 }
 
 model RefreshToken {
@@ -112,6 +114,7 @@ model Project {
   staffAssignments     StaffAssignment[]
   tasks                Task[]
   workflowEvents       WorkflowEvent[]
+  workflowStages       WorkflowStage[]
 }
 
 model StaffAssignment {
@@ -231,6 +234,7 @@ model File {
   agreements          Agreement[]
   project             Project?    @relation(fields: [projectId], references: [id])
   user                User?       @relation(fields: [userId], references: [id])
+  workflowStageAttachments WorkflowStageAttachment[]
 
   @@index([projectId, category])
 }
@@ -492,6 +496,7 @@ model StandaloneAgreement {
   template         StandaloneAgreementTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
   signatures       StandaloneAgreementSignature[]
   documents        StandaloneAgreementDocument[]
+  linkedQuoteId    String?
 }
 
 model StandaloneAgreementSignature {
@@ -525,4 +530,77 @@ enum DocumentType {
   PAN
   OTHER
 }
+
+enum WorkflowStageType {
+  CLIENT_ONBOARDING
+  AGREEMENT
+  ADVANCE_PAYMENT
+  PRE_PRODUCTION
+  SHOOT
+  POST_PRODUCTION
+  EDITING
+  DELIVERY
+  PROJECT_CLOSURE
+}
+
+enum WorkflowStageStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model WorkflowStage {
+  id           String              @id @default(uuid())
+  projectId    String
+  stageType    WorkflowStageType
+  displayOrder Int
+  status       WorkflowStageStatus @default(PENDING)
+  ownerId      String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  notes        String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  owner        User?               @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  attachments  WorkflowStageAttachment[]
+  activities   WorkflowActivity[]
+
+  @@unique([projectId, stageType])
+  @@index([projectId])
+  @@index([ownerId])
+}
+
+model WorkflowStageAttachment {
+  id              String        @id @default(uuid())
+  workflowStageId String
+  fileId          String
+  fileName        String
+  uploadedBy      String        // User ID
+  createdAt       DateTime      @default(now())
+
+  workflowStage   WorkflowStage @relation(fields: [workflowStageId], references: [id], onDelete: Cascade)
+  file            File          @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([workflowStageId])
+  @@index([fileId])
+}
+
+model WorkflowActivity {
+  id              String              @id @default(uuid())
+  workflowStageId String
+  changedBy       String              // User ID
+  oldStatus       WorkflowStageStatus
+  newStatus       WorkflowStageStatus
+  remarks         String?
+  createdAt       DateTime            @default(now())
+
+  workflowStage   WorkflowStage       @relation(fields: [workflowStageId], references: [id], onDelete: Cascade)
+  user            User                @relation(fields: [changedBy], references: [id], onDelete: Cascade)
+
+  @@index([workflowStageId])
+  @@index([changedBy])
+}
+
 

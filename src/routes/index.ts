@@ -11,7 +11,8 @@ import {
   createQuotation, 
   getQuotationById, 
   updateQuotation, 
-  deleteQuotation 
+  deleteQuotation,
+  generateQuotationPdfController
 } from '../modules/invoices/invoices.controller';
 import { CreateQuotationSchema, UpdateQuotationSchema } from '../modules/invoices/invoices.validation';
 import { authenticate } from '../middleware/auth';
@@ -30,7 +31,12 @@ import {
   standaloneAgreementTemplatesRouter, 
   standaloneAgreementsRouter 
 } from '../modules/standalone-agreements/standalone-agreements.routes';
-import { getClientAgreement } from '../modules/standalone-agreements/standalone-agreements.controller';
+import { 
+  getClientAgreement,
+  acceptQuotationController,
+  getClientAgreementsListController,
+  getClientAgreementDetailsController
+} from '../modules/standalone-agreements/standalone-agreements.controller';
 
 const router = Router();
 
@@ -44,6 +50,8 @@ quotationRouter.post('/', validateBody(CreateQuotationSchema), createQuotation);
 quotationRouter.get('/:id', getQuotationById);
 quotationRouter.put('/:id', validateBody(UpdateQuotationSchema), updateQuotation);
 quotationRouter.delete('/:id', deleteQuotation);
+quotationRouter.post('/:id/generate-pdf', generateQuotationPdfController);
+quotationRouter.post('/:id/accept', acceptQuotationController);
 
 // Register base routes
 router.use('/auth', authRoutes);
@@ -66,6 +74,13 @@ router.use('/agreements', agreementsRoutes);
 router.use('/standalone-agreement-templates', standaloneAgreementTemplatesRouter);
 router.use('/standalone-agreements', standaloneAgreementsRouter);
 router.get('/clients/:clientId/standalone-agreement', authenticate, getClientAgreement);
+
+// Client Agreement API Endpoints
+router.get('/client/agreements', authenticate, getClientAgreementsListController);
+router.get('/client/agreements/:id', authenticate, getClientAgreementDetailsController);
+router.get('/clients/agreements', authenticate, getClientAgreementsListController);
+router.get('/clients/agreements/:id', authenticate, getClientAgreementDetailsController);
+
 router.use('/', healthRoutes);
 
 export default router;

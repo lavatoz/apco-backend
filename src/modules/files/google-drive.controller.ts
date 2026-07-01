@@ -1,4 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
+import fs from 'fs';
+import path from 'path';
 import crypto from 'crypto';
 import { prisma } from '../../config/database';
 import { uploadFile, downloadFileStream, deleteFile, getOrCreateProjectFolderStructure } from '../../services/google-drive.service';
@@ -328,7 +330,7 @@ export async function downloadProjectFile(req: Request, res: Response, next: Nex
       where: { id, deletedAt: null }
     });
 
-    if (!file || !file.googleDriveFileId) {
+    if (!file) {
       throw new AppError('File not found or has been deleted.', 404);
     }
 
@@ -354,8 +356,40 @@ export async function downloadProjectFile(req: Request, res: Response, next: Nex
       userAgent: meta.userAgent
     });
 
-    // Retrieve file download stream from Google Drive
-    const stream = await downloadFileStream(file.googleDriveFileId);
+    let stream: any = null;
+
+    // 1. Try downloading from Google Drive if Drive ID exists
+    if (file.googleDriveFileId) {
+      try {
+        stream = await downloadFileStream(file.googleDriveFileId);
+      } catch (driveErr) {
+        console.error(`[Download File] Google Drive download failed for file ${file.id}, attempting local fallback:`, driveErr);
+      }
+    }
+
+    // 2. Fall back to local storage if Drive stream is unavailable or failed
+    if (!stream) {
+      const candidatePaths = [
+        path.resolve(process.cwd(), file.key),
+        path.resolve(process.cwd(), 'uploads/quotations/pdfs', file.originalName),
+        path.resolve(process.cwd(), 'uploads/agreements/pdfs', file.originalName),
+        path.resolve(process.cwd(), 'uploads/standalone-agreements/pdfs', file.originalName),
+      ];
+
+      let localFilePath: string | null = null;
+      for (const candidate of candidatePaths) {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          localFilePath = candidate;
+          break;
+        }
+      }
+
+      if (localFilePath) {
+        stream = fs.createReadStream(localFilePath);
+      } else {
+        throw new AppError('File content not found on Google Drive or local storage.', 404);
+      }
+    }
 
     // Set download headers
     res.setHeader('Content-Type', file.mimeType);

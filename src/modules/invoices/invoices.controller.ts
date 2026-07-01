@@ -1,4 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '../../config/database';
 import { logAudit, extractReqMeta } from '../../services/audit.service';
 import { logWorkflowEvent } from '../../services/workflow.service';
@@ -6,6 +8,9 @@ import { createNotification, NotificationService } from '../../services/notifica
 import { generateDocumentNumber } from '../../utils/number-generator';
 import { AppError } from '../../middleware/error';
 import { Role } from '@prisma/client';
+import { generateQuotationPdf } from '../../services/quotation-pdf.service';
+import { aahaLogoBase64, tinyToesLogoBase64 } from '../../services/default-logo';
+import { getOrCreateProjectFolderStructure } from '../../services/google-drive.service';
 
 /**
  * Resolves prefix for a project based on its type or falls back to default company
@@ -41,8 +46,8 @@ export async function getInvoices(req: Request, res: Response, next: NextFunctio
     const user = req.user!;
 
     if (
-      user.role !== Role.SystemAdmin && 
-      user.role !== Role.Manager && 
+      user.role !== Role.SystemAdmin &&
+      user.role !== Role.Manager &&
       user.role !== Role.Client
     ) {
       throw new AppError('Access denied. Financial visibility is restricted.', 403);
@@ -87,8 +92,8 @@ export async function getInvoiceById(req: Request, res: Response, next: NextFunc
     const user = req.user!;
 
     if (
-      user.role !== Role.SystemAdmin && 
-      user.role !== Role.Manager && 
+      user.role !== Role.SystemAdmin &&
+      user.role !== Role.Manager &&
       user.role !== Role.Client
     ) {
       throw new AppError('Access denied.', 403);
@@ -127,11 +132,11 @@ export async function getInvoiceById(req: Request, res: Response, next: NextFunc
 export async function createInvoice(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const user = req.user!;
-    const { 
-      projectId, 
-      clientId, 
-      amount, 
-      status, 
+    const {
+      projectId,
+      clientId,
+      amount,
+      status,
       dueDate,
       discountValue,
       discountType,
@@ -328,8 +333,8 @@ export async function getQuotations(req: Request, res: Response, next: NextFunct
     const user = req.user!;
 
     if (
-      user.role !== Role.SystemAdmin && 
-      user.role !== Role.Manager && 
+      user.role !== Role.SystemAdmin &&
+      user.role !== Role.Manager &&
       user.role !== Role.Client
     ) {
       throw new AppError('Access denied.', 403);
@@ -371,8 +376,8 @@ export async function getQuotationById(req: Request, res: Response, next: NextFu
     const user = req.user!;
 
     if (
-      user.role !== Role.SystemAdmin && 
-      user.role !== Role.Manager && 
+      user.role !== Role.SystemAdmin &&
+      user.role !== Role.Manager &&
       user.role !== Role.Client
     ) {
       throw new AppError('Access denied.', 403);
@@ -410,11 +415,11 @@ export async function getQuotationById(req: Request, res: Response, next: NextFu
 export async function createQuotation(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const user = req.user!;
-    const { 
-      projectId, 
-      clientId, 
-      amount, 
-      status, 
+    const {
+      projectId,
+      clientId,
+      amount,
+      status,
       validUntil,
       discountValue,
       discountType,
@@ -541,6 +546,15 @@ export async function updateQuotation(req: Request, res: Response, next: NextFun
       });
     });
 
+    if (quotation.status === 'Approved' || quotation.status === 'Accepted' || quotation.status === 'ACCEPTED') {
+      try {
+        const { StandaloneAgreementsService } = require('../standalone-agreements/standalone-agreements.service');
+        await StandaloneAgreementsService.acceptQuotation(id);
+      } catch (agrErr) {
+        console.error('[Quotation Update] Auto agreement assignment log:', agrErr);
+      }
+    }
+
     await logAudit({
       userId: user.id,
       action: 'QUOTATION_UPDATE',
@@ -558,18 +572,30 @@ export async function updateQuotation(req: Request, res: Response, next: NextFun
  * Delete quotation (Soft Delete)
  */
 export async function deleteQuotation(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const { id } = req.params;
+  console.log(`[DELETE QUOTATION] Delete request received for ID: ${id}`);
+
   try {
-    const { id } = req.params;
     const user = req.user!;
     const meta = extractReqMeta(req);
 
+    // 1. Permission check
     if (user.role !== Role.SystemAdmin && user.role !== Role.Manager) {
-      throw new AppError('Only administrators or managers can delete quotations.', 403);
+      const errMsg = 'Only administrators or managers can delete quotations.';
+      console.warn(`[DELETE QUOTATION] Permission issue: ${errMsg} User: ${user.id}, Role: ${user.role}`);
+      throw new AppError(errMsg, 403);
     }
 
+    // 2. Record check
     const existing = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
-    if (!existing) throw new AppError('Quotation not found.', 404);
+    if (!existing) {
+      const errMsg = 'Quotation not found or already deleted.';
+      console.warn(`[DELETE QUOTATION] Record not found: ${errMsg} ID: ${id}`);
+      throw new AppError(errMsg, 404);
+    }
 
+    // 3. Soft delete operation
+    console.log(`[DELETE QUOTATION] Soft deleting quotation ${id} in database...`);
     await prisma.quotation.update({
       where: { id },
       data: { deletedAt: new Date() },
@@ -582,8 +608,18 @@ export async function deleteQuotation(req: Request, res: Response, next: NextFun
       ...meta,
     });
 
+    console.log(`[DELETE QUOTATION] Quotation ${id} soft deleted successfully.`);
     res.status(200).json({ message: 'Quotation deleted successfully.' });
-  } catch (error) {
+  } catch (error: any) {
+    console.error(`[DELETE QUOTATION] Deletion failed for ID ${id}. Error: ${error.message || error}`);
+    
+    // Check if it's a known Prisma error or database constraint
+    if (error.code === 'P2003') {
+      const errMsg = 'Quotation deletion blocked by a foreign key constraint.';
+      console.error(`[DELETE QUOTATION] Foreign key constraint error: ${errMsg}`);
+      return next(new AppError(errMsg, 409));
+    }
+    
     next(error);
   }
 }
@@ -600,8 +636,8 @@ export async function getAgreements(req: Request, res: Response, next: NextFunct
     const user = req.user!;
 
     if (
-      user.role !== Role.SystemAdmin && 
-      user.role !== Role.Manager && 
+      user.role !== Role.SystemAdmin &&
+      user.role !== Role.Manager &&
       user.role !== Role.Client
     ) {
       throw new AppError('Access denied.', 403);
@@ -742,7 +778,7 @@ export async function recordPayment(req: Request, res: Response, next: NextFunct
         data: { status: newInvoiceStatus },
       });
 
-       const client = await prisma.client.findUnique({ where: { id: invoice.clientId } });
+      const client = await prisma.client.findUnique({ where: { id: invoice.clientId } });
       if (client) {
         const clientUser = await prisma.user.findFirst({ where: { email: client.email } });
         if (clientUser) {
@@ -775,6 +811,307 @@ export async function recordPayment(req: Request, res: Response, next: NextFunct
     });
 
     res.status(201).json(payment);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Generates dynamic, custom styled dark-mode quotation PDF and uploads to GDrive
+ */
+export async function generateQuotationPdfController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const user = req.user!;
+    const { id } = req.params;
+    const meta = extractReqMeta(req);
+
+    // 1. RBAC Check (Only Admins and Managers allowed)
+    if (user.role !== Role.SystemAdmin && user.role !== Role.Manager) {
+      throw new AppError('Only administrators or managers can generate quotation PDFs.', 403);
+    }
+
+    // 2. Fetch Quotation with items and project/client info
+    const quotation = await prisma.quotation.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        items: true,
+        project: true,
+        client: true,
+      },
+    });
+
+    if (!quotation) {
+      throw new AppError('Quotation not found.', 404);
+    }
+
+    // 3. Resolve active brand profile and logo
+    let brandProfile = null;
+    if (quotation.brandId) {
+      brandProfile = await prisma.companyProfile.findFirst({
+        where: { id: quotation.brandId, deletedAt: null },
+      });
+    }
+
+    if (!brandProfile && quotation.brand) {
+      brandProfile = await prisma.companyProfile.findFirst({
+        where: { companyName: quotation.brand, deletedAt: null },
+      });
+    }
+
+    const activeBrandName = brandProfile?.companyName || quotation.brand || undefined;
+
+    // Fetch default company profile to get fallback bank details
+    const companyProfile = await prisma.companyProfile.findFirst({
+      where: { isDefault: true, deletedAt: null },
+    });
+
+    // Brand Resolution Order:
+    // 1. Active Brand Logo from Brand Profile (brandId matched, or brand name matched if brandId is unavailable)
+    // 2. Parent Company Logo (Artisans Production Company - default company profile)
+    // 3. Brand-Specific Fallback Logo (Aaha Kalyanam / Tiny Toes)
+    // 4. Existing Text Branding (logo remains undefined, text fallback is rendered)
+    let companyLogoUrl: string | undefined = undefined;
+
+    if (brandProfile?.logo) {
+      companyLogoUrl = brandProfile.logo;
+    } else if (companyProfile?.logo) {
+      companyLogoUrl = companyProfile.logo;
+    } else if (activeBrandName) {
+      const normalized = activeBrandName.toLowerCase();
+      if (normalized.includes('aaha')) {
+        companyLogoUrl = aahaLogoBase64;
+      } else if (normalized.includes('tiny toes')) {
+        companyLogoUrl = tinyToesLogoBase64;
+      }
+    }
+
+    // 4. Fetch client events for event details resolution
+    // Event resolution priority:
+    // 1. Linked event from Task table (where projectId matches and eventId is not null)
+    let resolvedEvent = null;
+    const taskWithEvent = await prisma.task.findFirst({
+      where: { projectId: quotation.projectId, eventId: { not: null } },
+      include: { event: true },
+    });
+    if (taskWithEvent && taskWithEvent.event) {
+      resolvedEvent = taskWithEvent.event;
+    }
+
+    const clientEvents = await prisma.event.findMany({
+      where: { clientId: quotation.clientId },
+      orderBy: { date: 'asc' },
+    });
+
+    // 2. Fallback: Search client events using keyword matching (wedding or muhurtham)
+    if (!resolvedEvent) {
+      resolvedEvent = clientEvents.find((e) =>
+        e.name.toLowerCase().includes('wedding') ||
+        e.name.toLowerCase().includes('muhurtham')
+      );
+    }
+
+    // 3. Second Fallback: Use the earliest chronological client event
+    if (!resolvedEvent && clientEvents.length > 0) {
+      resolvedEvent = clientEvents[0];
+    }
+
+    const weddingDate = resolvedEvent?.date
+      ? resolvedEvent.date.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
+      : undefined;
+
+    const muhurthamTime = resolvedEvent?.startTime && resolvedEvent?.endTime
+      ? `${resolvedEvent.startTime} - ${resolvedEvent.endTime}`
+      : undefined;
+
+    const weddingVenue = resolvedEvent?.venueLocation || undefined;
+    const brideLocation = resolvedEvent?.brideLocation || undefined;
+    const groomLocation = resolvedEvent?.groomLocation || undefined;
+
+    const tagline = brandProfile?.tagline || companyProfile?.tagline || undefined;
+    const primaryColor = brandProfile?.primaryColor || companyProfile?.primaryColor || undefined;
+
+    // 5. Fetch successful payments logged under the project for calculating advancePaid
+    const payments = await prisma.payment.findMany({
+      where: {
+        invoice: { projectId: quotation.projectId },
+        status: { in: ['Paid', 'SUCCESSFUL', 'successful', 'paid', 'Successful'] },
+      },
+    });
+    const advancePaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const balanceAmount = Number(quotation.amount) - advancePaid;
+
+    // 6. Gather formatting parameters
+    const issueDate = quotation.createdAt.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+    const validUntil = quotation.validUntil.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    // Convert quotation items to service format
+    const items = quotation.items.map((item) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: Number(item.unitPrice),
+      amount: Number(item.amount),
+    }));
+
+    // Resolve bank details from profile
+    let bankDetails = {};
+    if (companyProfile && companyProfile.bankDetails) {
+      const bd = companyProfile.bankDetails as any;
+      bankDetails = {
+        accountName: bd.accountName || bd.AccountName || '',
+        accountNumber: bd.accountNumber || bd.AccountNumber || '',
+        bankName: bd.bankName || bd.BankName || '',
+        ifscCode: bd.ifscCode || bd.IfscCode || '',
+      };
+    }
+
+    // 7. Generate PDF Buffer using the service
+    const pdfBuffer = await generateQuotationPdf({
+      quotationNumber: quotation.quotationNumber,
+      issueDate,
+      validUntil,
+      clientName: quotation.client.name,
+      clientEmail: quotation.client.email,
+      clientPhone: quotation.client.phone || undefined,
+      clientAddress: quotation.client.address || undefined,
+      clientCompanyName: quotation.client.companyName || undefined,
+      items,
+      amount: Number(quotation.amount),
+      discountType: quotation.discountType || undefined,
+      discountValue: quotation.discountValue ? Number(quotation.discountValue) : undefined,
+      taxPercent: quotation.taxPercent ? Number(quotation.taxPercent) : undefined,
+      shippingCost: quotation.shippingCost ? Number(quotation.shippingCost) : undefined,
+      advancePaid,
+      balanceAmount,
+      upiId: companyProfile?.upiId || undefined,
+      companyName: companyProfile?.companyName || 'Artisans Production Company',
+      bankDetails,
+      companyLogoUrl,
+      brandName: activeBrandName,
+      weddingDate,
+      muhurthamTime,
+      weddingVenue,
+      brideLocation,
+      groomLocation,
+      paymentTerms: quotation.paymentTerms || undefined,
+      primaryColor,
+      tagline,
+      templateId: quotation.templateId || undefined,
+      themePreset: brandProfile?.themePreset || companyProfile?.themePreset || undefined,
+    });
+
+    const sanitizedClientName = quotation.client.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const fileName = `Quotation_${quotation.quotationNumber}_${sanitizedClientName}.pdf`;
+    const relativeLocalPath = `uploads/quotations/pdfs/${fileName}`;
+    const absoluteLocalPath = path.resolve(process.cwd(), relativeLocalPath);
+
+    // 8. Save PDF locally as primary storage source
+    const dirPath = path.dirname(absoluteLocalPath);
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+    fs.writeFileSync(absoluteLocalPath, pdfBuffer);
+
+    // 9. Optional Google Drive upload (isolated try/catch)
+    let driveFile: any = null;
+    let quotationsFolderId = quotation.project?.quotationsFolderId;
+    try {
+      const folderStructure = await getOrCreateProjectFolderStructure(
+        quotation.client.name,
+        quotation.project.name,
+        {
+          driveFolderId: quotation.project.driveFolderId,
+          agreementsFolderId: quotation.project.agreementsFolderId,
+          quotationsFolderId: quotation.project.quotationsFolderId,
+          invoicesFolderId: quotation.project.invoicesFolderId,
+          galleryFolderId: quotation.project.galleryFolderId,
+          deliverablesFolderId: quotation.project.deliverablesFolderId,
+        }
+      );
+
+      if (folderStructure.quotationsFolderId !== quotation.project.quotationsFolderId) {
+        await prisma.project.update({
+          where: { id: quotation.projectId },
+          data: {
+            quotationsFolderId: folderStructure.quotationsFolderId,
+          },
+        });
+      }
+      quotationsFolderId = folderStructure.quotationsFolderId;
+    } catch (folderErr) {
+      console.error('[Quotation PDF] Google Drive folder resolution failed or optional skipped:', folderErr);
+    }
+
+    try {
+      const googleDriveService = require('../../services/google-drive.service');
+      driveFile = await googleDriveService.uploadFile(
+        pdfBuffer,
+        fileName,
+        'application/pdf',
+        quotationsFolderId || undefined
+      );
+    } catch (uploadErr) {
+      console.error('[Quotation PDF] Google Drive upload failed or optional skipped:', uploadErr);
+    }
+
+    // 10. Register generated PDF file in File table with local file path as key
+    const existingFile = await prisma.file.findUnique({
+      where: {
+        key: relativeLocalPath,
+      },
+    });
+    const fileRecord = existingFile
+      ? existingFile
+      : await prisma.file.create({
+        data: {
+          key: relativeLocalPath,
+          originalName: fileName,
+          mimeType: 'application/pdf',
+          size: pdfBuffer.length,
+          hash: require('crypto').createHash('sha256').update(pdfBuffer).digest('hex'),
+          isSecured: false,
+          projectId: quotation.projectId,
+          userId: user.id,
+          googleDriveFileId: driveFile?.id || null,
+          googleDriveViewLink: driveFile?.webViewLink || null,
+          category: 'Quotations',
+        },
+      });
+
+    // 11. Write timeline event and audit logs
+    await logWorkflowEvent({
+      projectId: quotation.projectId,
+      eventType: 'QUOTATION_GENERATED',
+      description: `Quotation PDF ${quotation.quotationNumber} was generated successfully.`,
+      payload: { quotationId: quotation.id, quotationNumber: quotation.quotationNumber, fileId: fileRecord.id },
+    });
+
+    await logAudit({
+      userId: user.id,
+      action: 'QUOTATION_GENERATE_PDF',
+      details: { quotationId: quotation.id, quotationNumber: quotation.quotationNumber, fileId: fileRecord.id },
+      ...meta,
+    });
+
+    res.status(201).json({
+      success: true,
+      quotationId: quotation.id,
+      quotationNumber: quotation.quotationNumber,
+      fileId: fileRecord.id,
+      fileName: fileRecord.originalName,
+      viewLink: driveFile?.webViewLink || null,
+    });
   } catch (error) {
     next(error);
   }

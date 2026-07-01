@@ -102,6 +102,21 @@ export async function runTests() {
   const originalAgreement = mockPrisma.agreement;
   const originalAuditLog = mockPrisma.auditLog;
   const originalWorkflowEvent = mockPrisma.workflowEvent;
+  const originalCompanyProfile = mockPrisma.companyProfile;
+
+  // Mock companyProfile model
+  mockPrisma.companyProfile = {
+    findFirst: async () => ({
+      id: 'comp-1',
+      companyName: 'Artisans Production Company',
+      tagline: 'Artisans Tagline',
+      primaryColor: '#3B82F6',
+      logo: 'data:image/png;base64,mocklogo',
+      phone: '1234567890',
+      email: 'contact@artisans.com',
+      address: '123 Street'
+    }),
+  };
 
   // Mock GDrive service methods
   const googleDriveService = require('../services/google-drive.service');
@@ -309,6 +324,7 @@ export async function runTests() {
     mockPrisma.agreement = originalAgreement;
     mockPrisma.auditLog = originalAuditLog;
     mockPrisma.workflowEvent = originalWorkflowEvent;
+    mockPrisma.companyProfile = originalCompanyProfile;
 
     // Restore GDrive functions
     googleDriveService.uploadFile = originalUpload;

@@ -134,8 +134,8 @@ export async function assignAgreement(req: Request, res: Response, next: NextFun
       throw new AppError('Only administrators or managers can assign agreements to clients.', 403);
     }
 
-    const { clientId, templateId } = req.body;
-    const agreement = await StandaloneAgreementsService.assignAgreement(clientId, templateId);
+    const { clientId, templateId, linkedQuoteId } = req.body;
+    const agreement = await StandaloneAgreementsService.assignAgreement(clientId, templateId, linkedQuoteId);
 
     await logAudit({
       userId: user.id,
@@ -511,6 +511,11 @@ export async function generatePdf(req: Request, res: Response, next: NextFunctio
       throw new AppError('Only signed agreements can have a generated PDF.', 400);
     }
 
+    // Enforce linkedQuoteId check for legacy agreements
+    if (!agreement.linkedQuoteId) {
+      throw new AppError('This is a legacy agreement and must be relinked to a quotation before a PDF can be generated.', 400);
+    }
+
     const filePath = await StandaloneAgreementsService.generateSignedAgreementPdf(agreementId);
 
     await logAudit({
@@ -564,14 +569,14 @@ export async function downloadPdf(req: Request, res: Response, next: NextFunctio
       throw new AppError('Only signed agreements can have a generated PDF.', 400);
     }
 
-    let filePath = agreement.pdfFilePath;
-    let absolutePath = filePath ? (path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath)) : null;
-
-    if (!absolutePath || !fs.existsSync(absolutePath)) {
-      // Auto-generate if file missing on disk but agreement is signed
-      filePath = await StandaloneAgreementsService.generateSignedAgreementPdf(agreementId);
-      absolutePath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+    // Enforce linkedQuoteId check for legacy agreements
+    if (!agreement.linkedQuoteId) {
+      throw new AppError('This is a legacy agreement and must be relinked to a quotation before a PDF can be generated.', 400);
     }
+
+    // Always regenerate PDF to prevent cached/stale files on disk from being served
+    const filePath = await StandaloneAgreementsService.generateSignedAgreementPdf(agreementId);
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=signed-agreement-${agreementId}.pdf`);
@@ -580,6 +585,97 @@ export async function downloadPdf(req: Request, res: Response, next: NextFunctio
     next(error);
   }
 }
+
+/**
+ * POST /standalone-agreements/:agreementId/link-quotation
+ * Link an existing standalone agreement to a quotation (Admin/Manager only)
+ */
+export async function linkQuotation(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const user = req.user!;
+    const { agreementId } = req.params;
+    const { linkedQuoteId } = req.body;
+    const meta = extractReqMeta(req);
+
+    if (user.role !== Role.SystemAdmin && user.role !== Role.Manager) {
+      throw new AppError('Only administrators or managers can link agreements to quotations.', 403);
+    }
+
+    const updated = await StandaloneAgreementsService.linkQuotation(agreementId, linkedQuoteId);
+
+    await logAudit({
+      userId: user.id,
+      action: 'STANDALONE_AGREEMENT_LINK_QUOTATION',
+      details: { agreementId, linkedQuoteId },
+      ...meta,
+    });
+
+    res.status(200).json(updated);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * POST /quotations/:id/accept
+ * Automatically handle quotation acceptance and agreement creation/activation
+ */
+export async function acceptQuotationController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id: quotationId } = req.params;
+    const user = req.user!;
+    const meta = extractReqMeta(req);
+
+    const agreement = await StandaloneAgreementsService.acceptQuotation(quotationId);
+
+    await logAudit({
+      userId: user.id,
+      action: 'QUOTATION_ACCEPT',
+      details: { quotationId, agreementId: agreement.id },
+      ...meta,
+    });
+
+    res.status(200).json({
+      message: 'Quotation accepted and agreement assigned successfully.',
+      agreement,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /client/agreements
+ * List client agreements formatted according to requirements
+ */
+export async function getClientAgreementsListController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const user = req.user!;
+    const clientIdParam = req.query.clientId as string | undefined;
+
+    const list = await StandaloneAgreementsService.getClientAgreementsList(user, clientIdParam);
+    res.status(200).json(list);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /client/agreements/:id
+ * Get complete client agreement details
+ */
+export async function getClientAgreementDetailsController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+    const user = req.user!;
+
+    const details = await StandaloneAgreementsService.getClientAgreementDetails(id, user);
+    res.status(200).json(details);
+  } catch (error) {
+    next(error);
+  }
+}
+
 
 
 

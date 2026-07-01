@@ -11,6 +11,7 @@ import {
   AssignAgreementSchema,
   UploadDocumentSchema,
   SignAgreementSchema,
+  LinkQuotationSchema,
 } from './standalone-agreements.validation';
 import {
   createTemplate,
@@ -28,6 +29,7 @@ import {
   downloadSignatureImage,
   generatePdf,
   downloadPdf,
+  linkQuotation,
 } from './standalone-agreements.controller';
 
 
@@ -90,6 +92,7 @@ agreementsRouter.get('/:agreementId/signature', getSignature);
 agreementsRouter.get('/:agreementId/signature/image', downloadSignatureImage);
 agreementsRouter.post('/:agreementId/generate-pdf', generatePdf);
 agreementsRouter.get('/:agreementId/pdf', downloadPdf);
+agreementsRouter.post('/:agreementId/link-quotation', validateBody(LinkQuotationSchema), linkQuotation);
 
 
 export {

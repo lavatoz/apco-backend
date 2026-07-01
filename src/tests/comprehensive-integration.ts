@@ -40,7 +40,8 @@ import {
   createAgreement,
   recordPayment,
   getQuotations,
-  getAgreements
+  getAgreements,
+  deleteQuotation
 } from '../modules/invoices/invoices.controller';
 
 import {
@@ -283,6 +284,22 @@ async function runTests() {
   mockPrisma.workflowEvent = {
     create: async (args: any) => ({ id: 'event-id', ...args.data }),
     findMany: async () => [],
+  };
+  mockPrisma.workflowStage = {
+    findMany: async () => [],
+    findUnique: async () => null,
+    findFirst: async () => null,
+    create: async (args: any) => ({ id: 'wf-stage-id', ...args.data }),
+    update: async (args: any) => ({ id: 'wf-stage-id', ...args.data }),
+    upsert: async (args: any) => ({ id: 'wf-stage-id', ...args.create }),
+    delete: async () => ({}),
+  };
+  mockPrisma.workflowStageAttachment = {
+    create: async (args: any) => ({ id: 'wf-attachment-id', ...args.data }),
+    delete: async () => ({}),
+  };
+  mockPrisma.workflowActivity = {
+    create: async (args: any) => ({ id: 'wf-activity-id', ...args.data }),
   };
   mockPrisma.staffAssignment = {
     findFirst: async () => null,
@@ -902,6 +919,20 @@ async function runTests() {
     const { responseData } = getResults();
     if (!responseData || responseData.length !== 1) {
       throw new Error('Failed to list quotations.');
+    }
+  });
+
+  await testCase('Invoices: Delete Quotation', async () => {
+    mockPrisma.quotation.findFirst = async () => ({ id: 'quo-1', quotationNumber: 'QT-1' });
+    mockPrisma.quotation.update = async (args: any) => ({ id: 'quo-1', ...args.data });
+
+    const { req, res, next, getResults } = createMockRequestResponse(
+      {}, {}, {}, { id: 'quo-1' }, adminUser
+    );
+    await deleteQuotation(req, res, next);
+    const { statusCode, responseData } = getResults();
+    if (statusCode !== 200 || !responseData || responseData.message !== 'Quotation deleted successfully.') {
+      throw new Error('Failed to delete quotation.');
     }
   });
 
@@ -1853,6 +1884,570 @@ async function runTests() {
     if (engagementTask.assignedUserId !== photographerUser.id) {
       throw new Error('Coordination task for Engagement was not automatically assigned.');
     }
+  });
+
+  await testCase('Quotations: Generate quotation PDF and upload to GDrive', async () => {
+    let loggedEvent: any = null;
+    let fileCreated = false;
+    let driveUploaded = false;
+
+    const mockQuotation = {
+      id: 'quo-1',
+      quotationNumber: 'QUO-2026-0001',
+      amount: 1500,
+      status: 'Draft',
+      projectId: 'project-uuid',
+      clientId: 'client-rec-id',
+      validUntil: new Date(),
+      createdAt: new Date(),
+      client: { name: 'Joel Client', email: 'joel@client.com', phone: '123456', address: '123 St', companyName: 'Client Corp' },
+      project: { name: 'Joel Wedding' },
+      items: [{ description: 'Item 1', quantity: 2, unitPrice: 750, amount: 1500 }]
+    };
+
+    mockPrisma.quotation.findFirst = async () => mockQuotation as any;
+    mockPrisma.companyProfile.findFirst = async () => ({
+      companyName: 'Artisans Production Company',
+      upiId: 'artisans@upi',
+      bankDetails: { bankName: 'Federal Bank', accountNumber: '12345' }
+    });
+    mockPrisma.payment.findMany = async () => [];
+
+    mockPrisma.project.findFirst = async () => ({
+      id: 'project-uuid',
+      name: 'Joel Wedding',
+      driveFolderId: 'folder-1',
+      quotationsFolderId: 'folder-quo'
+    });
+
+    const googleDriveService = require('../services/google-drive.service');
+    const originalUploadFile = googleDriveService.uploadFile;
+    googleDriveService.uploadFile = async () => {
+      driveUploaded = true;
+      return { id: 'gdrive-file-123', webViewLink: 'https://drive.google.com/file/123/view' };
+    };
+
+    mockPrisma.file.findUnique = async () => null;
+    mockPrisma.file.create = async (args: any) => {
+      fileCreated = true;
+      return { id: 'file-rec-id', ...args.data };
+    };
+    mockPrisma.file.update = async (args: any) => {
+      fileCreated = true;
+      return { id: 'file-rec-id', ...args.data };
+    };
+
+    mockPrisma.workflowEvent.create = async (args: any) => {
+      loggedEvent = args.data;
+      return {};
+    };
+
+    const { req, res, next, getResults } = createMockRequestResponse(
+      {}, { id: 'quo-1' }, {}, {}, adminUser
+    );
+
+    const { generateQuotationPdfController } = require('../modules/invoices/invoices.controller');
+    await generateQuotationPdfController(req, res, next);
+    const { statusCode, responseData, nextError } = getResults();
+
+    googleDriveService.uploadFile = originalUploadFile;
+
+    if (nextError) {
+      throw nextError;
+    }
+
+    if (statusCode !== 201) {
+      throw new Error(`Expected 201, got ${statusCode}`);
+    }
+    if (!driveUploaded || !fileCreated) {
+      throw new Error('GDrive upload or file registration failed.');
+    }
+    if (responseData.quotationNumber !== 'QUO-2026-0001') {
+      throw new Error('Returned incorrect quotation number.');
+    }
+    if (!loggedEvent || loggedEvent.eventType !== 'QUOTATION_GENERATED') {
+      throw new Error('QUOTATION_GENERATED timeline event not logged.');
+    }
+  });
+
+  await testCase('Quotations: Brand resolution - Brand Profile Logo by brandId', async () => {
+    const pdfService = require('../services/quotation-pdf.service');
+    const originalGeneratePdf = pdfService.generateQuotationPdf;
+    let passedData: any = null;
+    pdfService.generateQuotationPdf = async (data: any) => {
+      passedData = data;
+      return Buffer.from('mock-pdf');
+    };
+
+    mockPrisma.quotation.findFirst = async () => ({
+      id: 'quo-1',
+      quotationNumber: 'QUO-2026-0002',
+      amount: 1500,
+      status: 'Draft',
+      projectId: 'project-uuid',
+      clientId: 'client-rec-id',
+      validUntil: new Date(),
+      createdAt: new Date(),
+      client: { name: 'Joel Client', email: 'joel@client.com', phone: '123456' },
+      project: { name: 'Joel Wedding' },
+      items: [],
+      brandId: 'brand-uuid-123',
+      brand: 'Some Brand Name'
+    } as any);
+
+    mockPrisma.companyProfile.findFirst = async (args: any) => {
+      if (args?.where?.id === 'brand-uuid-123') {
+        return { id: 'brand-uuid-123', companyName: 'Brand A Profile', logo: 'https://brand-a.com/logo.png' } as any;
+      }
+      if (args?.where?.isDefault === true) {
+        return { companyName: 'Artisans Production Company', logo: 'https://artisans.com/parent-logo.png' } as any;
+      }
+      return null;
+    };
+
+    const { req, res, next, getResults } = createMockRequestResponse({}, { id: 'quo-1' }, {}, {}, adminUser);
+    const { generateQuotationPdfController } = require('../modules/invoices/invoices.controller');
+    await generateQuotationPdfController(req, res, next);
+
+    pdfService.generateQuotationPdf = originalGeneratePdf;
+
+    if (getResults().nextError) throw getResults().nextError;
+    if (!passedData) throw new Error('PDF generation was not called.');
+    if (passedData.companyLogoUrl !== 'https://brand-a.com/logo.png') {
+      throw new Error(`Expected brand profile logo, got ${passedData.companyLogoUrl}`);
+    }
+    if (passedData.brandName !== 'Brand A Profile') {
+      throw new Error(`Expected brandName to be Brand A Profile, got ${passedData.brandName}`);
+    }
+  });
+
+  await testCase('Quotations: Brand resolution - Brand Profile Logo by name fallback', async () => {
+    const pdfService = require('../services/quotation-pdf.service');
+    const originalGeneratePdf = pdfService.generateQuotationPdf;
+    let passedData: any = null;
+    pdfService.generateQuotationPdf = async (data: any) => {
+      passedData = data;
+      return Buffer.from('mock-pdf');
+    };
+
+    mockPrisma.quotation.findFirst = async () => ({
+      id: 'quo-1',
+      quotationNumber: 'QUO-2026-0003',
+      amount: 1500,
+      status: 'Draft',
+      projectId: 'project-uuid',
+      clientId: 'client-rec-id',
+      validUntil: new Date(),
+      createdAt: new Date(),
+      client: { name: 'Joel Client', email: 'joel@client.com', phone: '123456' },
+      project: { name: 'Joel Wedding' },
+      items: [],
+      brandId: null,
+      brand: 'Aaha Kalyanam'
+    } as any);
+
+    mockPrisma.companyProfile.findFirst = async (args: any) => {
+      if (args?.where?.companyName === 'Aaha Kalyanam') {
+        return { id: 'brand-uuid-456', companyName: 'Aaha Kalyanam', logo: 'https://aaha.com/profile-logo.png' } as any;
+      }
+      if (args?.where?.isDefault === true) {
+        return { companyName: 'Artisans Production Company', logo: 'https://artisans.com/parent-logo.png' } as any;
+      }
+      return null;
+    };
+
+    const { req, res, next, getResults } = createMockRequestResponse({}, { id: 'quo-1' }, {}, {}, adminUser);
+    const { generateQuotationPdfController } = require('../modules/invoices/invoices.controller');
+    await generateQuotationPdfController(req, res, next);
+
+    pdfService.generateQuotationPdf = originalGeneratePdf;
+
+    if (getResults().nextError) throw getResults().nextError;
+    if (!passedData) throw new Error('PDF generation was not called.');
+    if (passedData.companyLogoUrl !== 'https://aaha.com/profile-logo.png') {
+      throw new Error(`Expected resolved profile logo by name, got ${passedData.companyLogoUrl}`);
+    }
+  });
+
+  await testCase('Quotations: Brand resolution - Fallback to Parent Company Logo', async () => {
+    const pdfService = require('../services/quotation-pdf.service');
+    const originalGeneratePdf = pdfService.generateQuotationPdf;
+    let passedData: any = null;
+    pdfService.generateQuotationPdf = async (data: any) => {
+      passedData = data;
+      return Buffer.from('mock-pdf');
+    };
+
+    mockPrisma.quotation.findFirst = async () => ({
+      id: 'quo-1',
+      quotationNumber: 'QUO-2026-0004',
+      amount: 1500,
+      status: 'Draft',
+      projectId: 'project-uuid',
+      clientId: 'client-rec-id',
+      validUntil: new Date(),
+      createdAt: new Date(),
+      client: { name: 'Joel Client', email: 'joel@client.com', phone: '123456' },
+      project: { name: 'Joel Wedding' },
+      items: [],
+      brandId: 'brand-uuid-no-logo',
+      brand: 'Future Brand'
+    } as any);
+
+    mockPrisma.companyProfile.findFirst = async (args: any) => {
+      if (args?.where?.id === 'brand-uuid-no-logo') {
+        return { id: 'brand-uuid-no-logo', companyName: 'Future Brand', logo: null } as any;
+      }
+      if (args?.where?.isDefault === true) {
+        return { companyName: 'Artisans Production Company', logo: 'https://artisans.com/parent-logo.png' } as any;
+      }
+      return null;
+    };
+
+    const { req, res, next, getResults } = createMockRequestResponse({}, { id: 'quo-1' }, {}, {}, adminUser);
+    const { generateQuotationPdfController } = require('../modules/invoices/invoices.controller');
+    await generateQuotationPdfController(req, res, next);
+
+    pdfService.generateQuotationPdf = originalGeneratePdf;
+
+    if (getResults().nextError) throw getResults().nextError;
+    if (!passedData) throw new Error('PDF generation was not called.');
+    if (passedData.companyLogoUrl !== 'https://artisans.com/parent-logo.png') {
+      throw new Error(`Expected fallback to parent company logo, got ${passedData.companyLogoUrl}`);
+    }
+  });
+
+  await testCase('Quotations: Brand resolution - Brand-Specific Fallback Logo (Aaha Kalyanam)', async () => {
+    const pdfService = require('../services/quotation-pdf.service');
+    const originalGeneratePdf = pdfService.generateQuotationPdf;
+    let passedData: any = null;
+    pdfService.generateQuotationPdf = async (data: any) => {
+      passedData = data;
+      return Buffer.from('mock-pdf');
+    };
+
+    mockPrisma.quotation.findFirst = async () => ({
+      id: 'quo-1',
+      quotationNumber: 'QUO-2026-0005',
+      amount: 1500,
+      status: 'Draft',
+      projectId: 'project-uuid',
+      clientId: 'client-rec-id',
+      validUntil: new Date(),
+      createdAt: new Date(),
+      client: { name: 'Joel Client', email: 'joel@client.com', phone: '123456' },
+      project: { name: 'Joel Wedding' },
+      items: [],
+      brandId: 'brand-uuid-no-logo',
+      brand: 'Aaha Kalyanam'
+    } as any);
+
+    mockPrisma.companyProfile.findFirst = async (args: any) => {
+      if (args?.where?.id === 'brand-uuid-no-logo') {
+        return { id: 'brand-uuid-no-logo', companyName: 'Aaha Kalyanam', logo: null } as any;
+      }
+      if (args?.where?.isDefault === true) {
+        return { companyName: 'Artisans Production Company', logo: null } as any;
+      }
+      return null;
+    };
+
+    const { req, res, next, getResults } = createMockRequestResponse({}, { id: 'quo-1' }, {}, {}, adminUser);
+    const { generateQuotationPdfController } = require('../modules/invoices/invoices.controller');
+    await generateQuotationPdfController(req, res, next);
+
+    pdfService.generateQuotationPdf = originalGeneratePdf;
+
+    if (getResults().nextError) throw getResults().nextError;
+    if (!passedData) throw new Error('PDF generation was not called.');
+    if (!passedData.companyLogoUrl || !passedData.companyLogoUrl.startsWith('data:image/png;base64,')) {
+      throw new Error(`Expected fallback to base64 Aaha Kalyanam logo, got ${passedData.companyLogoUrl}`);
+    }
+  });
+
+  await testCase('Quotations: Brand resolution - Brand-Specific Fallback Logo (Tiny Toes)', async () => {
+    const pdfService = require('../services/quotation-pdf.service');
+    const originalGeneratePdf = pdfService.generateQuotationPdf;
+    let passedData: any = null;
+    pdfService.generateQuotationPdf = async (data: any) => {
+      passedData = data;
+      return Buffer.from('mock-pdf');
+    };
+
+    mockPrisma.quotation.findFirst = async () => ({
+      id: 'quo-1',
+      quotationNumber: 'QUO-2026-0006',
+      amount: 1500,
+      status: 'Draft',
+      projectId: 'project-uuid',
+      clientId: 'client-rec-id',
+      validUntil: new Date(),
+      createdAt: new Date(),
+      client: { name: 'Joel Client', email: 'joel@client.com', phone: '123456' },
+      project: { name: 'Joel Wedding' },
+      items: [],
+      brandId: 'brand-uuid-no-logo',
+      brand: 'Tiny Toes'
+    } as any);
+
+    mockPrisma.companyProfile.findFirst = async (args: any) => {
+      if (args?.where?.id === 'brand-uuid-no-logo') {
+        return { id: 'brand-uuid-no-logo', companyName: 'Tiny Toes', logo: null } as any;
+      }
+      if (args?.where?.isDefault === true) {
+        return { companyName: 'Artisans Production Company', logo: null } as any;
+      }
+      return null;
+    };
+
+    const { req, res, next, getResults } = createMockRequestResponse({}, { id: 'quo-1' }, {}, {}, adminUser);
+    const { generateQuotationPdfController } = require('../modules/invoices/invoices.controller');
+    await generateQuotationPdfController(req, res, next);
+
+    pdfService.generateQuotationPdf = originalGeneratePdf;
+
+    if (getResults().nextError) throw getResults().nextError;
+    if (!passedData) throw new Error('PDF generation was not called.');
+    if (!passedData.companyLogoUrl || !passedData.companyLogoUrl.startsWith('data:image/png;base64,')) {
+      throw new Error(`Expected fallback to base64 Tiny Toes logo, got ${passedData.companyLogoUrl}`);
+    }
+  });
+
+  await testCase('Quotations: Brand resolution - No Available Logo Fallback to Text Branding', async () => {
+    const pdfService = require('../services/quotation-pdf.service');
+    const originalGeneratePdf = pdfService.generateQuotationPdf;
+    let passedData: any = null;
+    pdfService.generateQuotationPdf = async (data: any) => {
+      passedData = data;
+      return Buffer.from('mock-pdf');
+    };
+
+    mockPrisma.quotation.findFirst = async () => ({
+      id: 'quo-1',
+      quotationNumber: 'QUO-2026-0007',
+      amount: 1500,
+      status: 'Draft',
+      projectId: 'project-uuid',
+      clientId: 'client-rec-id',
+      validUntil: new Date(),
+      createdAt: new Date(),
+      client: { name: 'Joel Client', email: 'joel@client.com', phone: '123456' },
+      project: { name: 'Joel Wedding' },
+      items: [],
+      brandId: 'brand-uuid-no-logo',
+      brand: 'Future Brand'
+    } as any);
+
+    mockPrisma.companyProfile.findFirst = async (args: any) => {
+      if (args?.where?.id === 'brand-uuid-no-logo') {
+        return { id: 'brand-uuid-no-logo', companyName: 'Future Brand', logo: null } as any;
+      }
+      if (args?.where?.isDefault === true) {
+        return { companyName: 'Artisans Production Company', logo: null } as any;
+      }
+      return null;
+    };
+
+    const { req, res, next, getResults } = createMockRequestResponse({}, { id: 'quo-1' }, {}, {}, adminUser);
+    const { generateQuotationPdfController } = require('../modules/invoices/invoices.controller');
+    await generateQuotationPdfController(req, res, next);
+
+    pdfService.generateQuotationPdf = originalGeneratePdf;
+
+    if (getResults().nextError) throw getResults().nextError;
+    if (!passedData) throw new Error('PDF generation was not called.');
+    if (passedData.companyLogoUrl !== undefined) {
+      throw new Error(`Expected companyLogoUrl to be undefined, got ${passedData.companyLogoUrl}`);
+    }
+    if (passedData.brandName !== 'Future Brand') {
+      throw new Error(`Expected brandName to be Future Brand, got ${passedData.brandName}`);
+    }
+  });
+
+  await testCase('Workflows V2: getProjectWorkflow returns stages and dynamic progress', async () => {
+    const { getProjectWorkflow } = require('../modules/workflow/workflow-v2.controller');
+    
+    mockPrisma.project.findFirst = async () => ({
+      id: 'project-uuid',
+      name: 'Test Project',
+      clientId: 'client-rec-id',
+      deletedAt: null,
+      client: { email: 'client@apco.com' },
+      staffAssignments: []
+    } as any);
+
+    mockPrisma.workflowStage.findMany = async () => [
+      { id: 'stage-1', stageType: 'CLIENT_ONBOARDING', displayOrder: 0, status: 'COMPLETED' },
+      { id: 'stage-2', stageType: 'AGREEMENT', displayOrder: 1, status: 'COMPLETED' },
+      { id: 'stage-3', stageType: 'ADVANCE_PAYMENT', displayOrder: 2, status: 'COMPLETED' },
+      { id: 'stage-4', stageType: 'PRE_PRODUCTION', displayOrder: 3, status: 'IN_PROGRESS' },
+      { id: 'stage-5', stageType: 'SHOOT', displayOrder: 4, status: 'PENDING' },
+      { id: 'stage-6', stageType: 'POST_PRODUCTION', displayOrder: 5, status: 'PENDING' },
+      { id: 'stage-7', stageType: 'EDITING', displayOrder: 6, status: 'PENDING' },
+      { id: 'stage-8', stageType: 'DELIVERY', displayOrder: 7, status: 'PENDING' },
+      { id: 'stage-9', stageType: 'PROJECT_CLOSURE', displayOrder: 8, status: 'PENDING' }
+    ] as any;
+
+    const { req, res, next, getResults } = createMockRequestResponse({}, { id: 'project-uuid' }, {}, {}, adminUser);
+    await getProjectWorkflow(req, res, next);
+
+    const result = getResults();
+    if (result.nextError) throw result.nextError;
+    if (result.statusCode !== 200) throw new Error(`Expected 200, got ${result.statusCode}`);
+    if (result.responseData.progress !== 33) {
+      throw new Error(`Expected progress to be 33%, got ${result.responseData.progress}%`);
+    }
+    if (result.responseData.stages.length !== 9) {
+      throw new Error(`Expected 9 stages, got ${result.responseData.stages.length}`);
+    }
+  });
+
+  await testCase('Workflows V2: updateProjectWorkflowStage allows Admin/Manager to update status and logs activity', async () => {
+    const { updateProjectWorkflowStage } = require('../modules/workflow/workflow-v2.controller');
+    
+    mockPrisma.project.findFirst = async () => ({
+      id: 'project-uuid',
+      name: 'Test Project',
+      clientId: 'client-rec-id',
+      deletedAt: null,
+      client: { email: 'client@apco.com' },
+      staffAssignments: []
+    } as any);
+
+    let stageUpdated = false;
+    let activityLogged = false;
+
+    mockPrisma.workflowStage.findFirst = async () => ({
+      id: 'stage-uuid-2',
+      projectId: 'project-uuid',
+      stageType: 'AGREEMENT',
+      displayOrder: 1,
+      status: 'PENDING',
+      startedAt: null,
+      completedAt: null
+    } as any);
+
+    mockPrisma.workflowStage.findMany = async () => [
+      { id: 'stage-uuid-1', stageType: 'CLIENT_ONBOARDING', displayOrder: 0, status: 'COMPLETED' },
+      { id: 'stage-uuid-2', stageType: 'AGREEMENT', displayOrder: 1, status: 'PENDING' }
+    ] as any;
+
+    mockPrisma.workflowStage.update = async (args: any) => {
+      stageUpdated = true;
+      if (args.data.status !== 'COMPLETED') throw new Error('Expected status to be updated to COMPLETED');
+      return { id: 'stage-uuid-2', ...args.data };
+    };
+
+    mockPrisma.workflowActivity.create = async (args: any) => {
+      activityLogged = true;
+      if (args.data.oldStatus !== 'PENDING' || args.data.newStatus !== 'COMPLETED') {
+        throw new Error('Activity log has incorrect statuses');
+      }
+      return { id: 'activity-id', ...args.data };
+    };
+
+    const body = {
+      status: 'Completed',
+      notes: 'Agreement signed and uploaded',
+      remarks: 'Signed on client site'
+    };
+
+    const { req, res, next, getResults } = createMockRequestResponse(body, { id: 'project-uuid', stageId: 'stage-uuid-2' }, {}, {}, adminUser);
+    await updateProjectWorkflowStage(req, res, next);
+
+    const result = getResults();
+    if (result.nextError) throw result.nextError;
+    if (result.statusCode !== 200) throw new Error(`Expected 200, got ${result.statusCode}`);
+    if (!stageUpdated) throw new Error('Stage was not updated');
+    if (!activityLogged) throw new Error('Workflow activity was not logged');
+  });
+
+  await testCase('Workflows V2: updateProjectWorkflowStage blocks assigned staff from updating unassigned stages', async () => {
+    const { updateProjectWorkflowStage } = require('../modules/workflow/workflow-v2.controller');
+    
+    mockPrisma.project.findFirst = async () => ({
+      id: 'project-uuid',
+      name: 'Test Project',
+      clientId: 'client-rec-id',
+      deletedAt: null,
+      client: { email: 'client@apco.com' },
+      staffAssignments: [{ userId: 'photographer-id' }]
+    } as any);
+
+    mockPrisma.workflowStage.findFirst = async () => ({
+      id: 'stage-uuid-2',
+      projectId: 'project-uuid',
+      stageType: 'AGREEMENT',
+      displayOrder: 1,
+      status: 'PENDING',
+      ownerId: 'manager-id' // Owned by someone else
+    } as any);
+
+    const body = { status: 'In Progress' };
+    const { req, res, next, getResults } = createMockRequestResponse(body, { id: 'project-uuid', stageId: 'stage-uuid-2' }, {}, {}, photographerUser);
+    await updateProjectWorkflowStage(req, res, next);
+
+    const result = getResults();
+    if (!result.nextError) throw new Error('Expected nextError to be thrown');
+    if (result.nextError.statusCode !== 403) throw new Error(`Expected 403, got ${result.nextError.statusCode}`);
+  });
+
+  await testCase('Workflows V2: deleteWorkflowStageAttachment blocks client and allows owner', async () => {
+    const { deleteWorkflowStageAttachment } = require('../modules/workflow/workflow-v2.controller');
+    
+    mockPrisma.project.findFirst = async () => ({
+      id: 'project-uuid',
+      name: 'Test Project',
+      clientId: 'client-rec-id',
+      deletedAt: null,
+      client: { email: 'client@apco.com' },
+      staffAssignments: [{ userId: 'photographer-id' }]
+    } as any);
+
+    mockPrisma.workflowStage.findFirst = async () => ({
+      id: 'stage-uuid-2',
+      projectId: 'project-uuid',
+      stageType: 'AGREEMENT',
+      displayOrder: 1,
+      ownerId: 'photographer-id'
+    } as any);
+
+    mockPrisma.workflowStageAttachment.findFirst = async () => ({
+      id: 'attach-1',
+      workflowStageId: 'stage-uuid-2'
+    } as any);
+
+    let deletedLink = false;
+    mockPrisma.workflowStageAttachment.delete = async () => {
+      deletedLink = true;
+      return {};
+    };
+
+    // Client should be blocked
+    const { req: reqClient, res: resClient, next: nextClient, getResults: getClientResults } = createMockRequestResponse(
+      {}, 
+      { id: 'project-uuid', stageId: 'stage-uuid-2', attachmentId: 'attach-1' }, 
+      {}, 
+      {}, 
+      clientUser
+    );
+    await deleteWorkflowStageAttachment(reqClient, resClient, nextClient);
+    if (!getClientResults().nextError || getClientResults().nextError.statusCode !== 403) {
+      throw new Error('Client was not blocked from deleting attachment');
+    }
+
+    // Owner staff should be allowed
+    const { req: reqStaff, res: resStaff, next: nextStaff, getResults: getStaffResults } = createMockRequestResponse(
+      {}, 
+      { id: 'project-uuid', stageId: 'stage-uuid-2', attachmentId: 'attach-1' }, 
+      {}, 
+      {}, 
+      photographerUser
+    );
+    await deleteWorkflowStageAttachment(reqStaff, resStaff, nextStaff);
+    if (getStaffResults().nextError) throw getStaffResults().nextError;
+    if (getStaffResults().statusCode !== 200) throw new Error('Expected 200 for staff deletion');
+    if (!deletedLink) throw new Error('Attachment linkage was not deleted');
   });
 
   console.log('\n📊 Comprehensive Integration Tests Summary:');

@@ -16,6 +16,7 @@ export const UpdateTemplateSchema = z.object({
 export const AssignAgreementSchema = z.object({
   clientId: z.string().min(1, 'Client ID is required'),
   templateId: z.string().min(1, 'Template ID is required'),
+  linkedQuoteId: z.string().uuid('Invalid Quote ID format').optional().nullable(),
 });
 
 import { DocumentType } from '@prisma/client';
@@ -27,6 +28,10 @@ export const UploadDocumentSchema = z.object({
 export const SignAgreementSchema = z.object({
   signerName: z.string().min(1, 'Signer name is required'),
   signatureImageUrl: z.string().min(1, 'Signature image is required'),
+});
+
+export const LinkQuotationSchema = z.object({
+  linkedQuoteId: z.string().uuid('Invalid Quote ID format'),
 });
 
 

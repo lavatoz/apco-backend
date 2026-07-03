@@ -88,6 +88,8 @@ model Client {
   user        User?
   events      Event[]
   standaloneAgreements StandaloneAgreement[]
+  photoSelections PhotoSelection[]
+  photoReviews    PhotoReview[]
 }
 
 model Project {
@@ -115,6 +117,10 @@ model Project {
   tasks                Task[]
   workflowEvents       WorkflowEvent[]
   workflowStages       WorkflowStage[]
+  gallery              ProjectGallery?
+  galleryPhotos        GalleryPhoto[]
+  photoSelections      PhotoSelection[]
+  photoReviews         PhotoReview[]
 }
 
 model StaffAssignment {
@@ -235,6 +241,7 @@ model File {
   project             Project?    @relation(fields: [projectId], references: [id])
   user                User?       @relation(fields: [userId], references: [id])
   workflowStageAttachments WorkflowStageAttachment[]
+  galleryPhotos       GalleryPhoto[]
 
   @@index([projectId, category])
 }
@@ -407,15 +414,30 @@ model Approval {
 }
 
 model Personnel {
-  id        String   @id @default(uuid())
-  name      String
-  role      String
-  phone     String?
-  email     String?
-  rate      Decimal? @db.Decimal(12, 2)
-  status    String   @default("Active")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String                     @id @default(uuid())
+  name        String
+  role        String
+  phone       String?
+  email       String?
+  rate        Decimal?                   @db.Decimal(12, 2)
+  status      String                     @default("Active")
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  assignments PersonnelEventAssignment[]
+}
+
+model PersonnelEventAssignment {
+  id          String    @id @default(uuid())
+  personnelId String
+  eventId     String
+  assignedAt  DateTime  @default(now())
+  assignedBy  String
+  notes       String?
+
+  personnel   Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([personnelId, eventId])
 }
 
 model AgreementTemplate {
@@ -449,23 +471,24 @@ enum Role {
 }
 
 model Event {
-  id                 String    @id
+  id                 String                     @id
   clientId           String
   name               String
   date               DateTime
   startTime          String?
   endTime            String?
-  progress           Int       @default(0)
+  progress           Int                        @default(0)
   actualCompletedAt  DateTime?
   brideLocation      String?
   groomLocation      String?
   venueLocation      String?
   notes              String?
-  status             String    @default("Scheduled")
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  client             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status             String                     @default("Scheduled")
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  client             Client                     @relation(fields: [clientId], references: [id], onDelete: Cascade)
   tasks              Task[]
+  personnelAssignments PersonnelEventAssignment[]
 }
 
 model StandaloneAgreementTemplate {
@@ -601,6 +624,74 @@ model WorkflowActivity {
 
   @@index([workflowStageId])
   @@index([changedBy])
+}
+
+enum GalleryStatus {
+  UPLOADED
+  SELECTION_IN_PROGRESS
+  SELECTION_SUBMITTED
+  READY_FOR_EDITING
+  EDITING
+  EDITED
+  DELIVERED
+}
+
+model ProjectGallery {
+  id              String        @id @default(uuid())
+  projectId       String        @unique
+  currentStatus   GalleryStatus @default(UPLOADED)
+  selectionLocked Boolean       @default(false)
+  submittedAt     DateTime?
+  submittedBy     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model GalleryPhoto {
+  id              String           @id @default(uuid())
+  projectId       String
+  fileId          String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  file            File             @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  selections      PhotoSelection[]
+  reviews         PhotoReview[]
+
+  @@unique([projectId, fileId])
+}
+
+model PhotoSelection {
+  id             String       @id @default(uuid())
+  galleryPhotoId String
+  clientId       String
+  projectId      String
+  selectedAt     DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  galleryPhoto   GalleryPhoto @relation(fields: [galleryPhotoId], references: [id], onDelete: Cascade)
+  client         Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([galleryPhotoId, clientId, projectId])
+}
+
+model PhotoReview {
+  id             String       @id @default(uuid())
+  galleryPhotoId String
+  clientId       String
+  projectId      String
+  reviewedAt     DateTime     @default(now())
+
+  galleryPhoto   GalleryPhoto @relation(fields: [galleryPhotoId], references: [id], onDelete: Cascade)
+  client         Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([galleryPhotoId, clientId, projectId])
 }
 
 

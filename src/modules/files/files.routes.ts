@@ -5,7 +5,8 @@ import {
   getFilesByProject, 
   deleteProjectFile,
   getFiles,
-  confirmUpload
+  confirmUpload,
+  downloadThumbnail
 } from './google-drive.controller';
 import { authenticate } from '../../middleware/auth';
 import { downloadLimiter } from '../../middleware/rate-limiters';
@@ -18,7 +19,10 @@ const upload = multer({
   limits: { fileSize: 100 * 1024 * 1024 } 
 });
 
-// Secure all file endpoints behind JWT authentication
+// Mount public / custom authenticated routes
+router.get('/:id/thumbnail', downloadThumbnail);
+
+// Secure subsequent file endpoints behind JWT authentication
 router.use(authenticate);
 
 // File Operations Endpoints

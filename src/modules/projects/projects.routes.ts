@@ -10,6 +10,14 @@ import {
   updateProjectStage,
   updateStaffAssignedEvents
 } from './projects.controller';
+import {
+  getProjectGalleryPhotos,
+  togglePhotoReviewState,
+  toggleFavoritePhoto,
+  submitPhotoSelection,
+  updateGalleryStatus,
+  downloadSelectedPhotos
+} from './gallery.controller';
 import { authenticate } from '../../middleware/auth';
 import { validateBody } from '../../middleware/validation';
 import { CreateProjectSchema, UpdateProjectSchema, AssignStaffSchema, UpdateAssignedEventsSchema } from './projects.validation';
@@ -20,6 +28,15 @@ const router = Router();
 // Protect all project routes
 router.use(authenticate);
 
+// Gallery & Photo Selection Routes (Mounted before dynamic :id routes to prevent interceptions)
+router.get('/:id/gallery-photos', getProjectGalleryPhotos);
+router.post('/:id/gallery/:galleryPhotoId/favorite', toggleFavoritePhoto);
+router.post('/:id/gallery/:galleryPhotoId/review', togglePhotoReviewState);
+router.post('/:id/gallery/submit', submitPhotoSelection);
+router.post('/:id/gallery/status', updateGalleryStatus);
+router.get('/:id/gallery/download-selected', downloadSelectedPhotos);
+
+// Base Project Routes
 router.get('/', getProjects);
 router.get('/:id', getProjectById);
 router.post('/', validateBody(CreateProjectSchema), createProject);

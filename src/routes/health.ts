@@ -1,8 +1,19 @@
 import { Router, Request, Response } from 'express';
 import { checkDatabaseConnection } from '../config/database';
-import { authenticateDrive } from '../services/google-drive.service';
+import { authenticateDrive, getDriveStatus } from '../services/google-drive.service';
 
 const router = Router();
+
+router.get('/system/google-drive/status', async (_req: Request, res: Response) => {
+  const status = getDriveStatus();
+  
+  res.status(status.authenticated ? 200 : 503).json({
+    authenticated: status.authenticated,
+    mode: status.mode,
+    folderAccessible: status.folderAccessible,
+    folderName: status.folderName
+  });
+});
 
 router.get('/health', async (_req: Request, res: Response) => {
   const isDbConnected = await checkDatabaseConnection();

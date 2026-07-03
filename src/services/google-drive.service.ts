@@ -5,6 +5,166 @@ import fs from 'fs';
 import path from 'path';
 
 let driveInstance: any = null;
+let authenticationMode: 'none' | 'oauth' | 'service-account' = 'none';
+let isAuthenticated = false;
+let folderName: string | null = null;
+let startupError: string | null = null;
+let useOAuthFailed = false;
+
+function isInvalidGrantError(error: any): boolean {
+  return (
+    error?.message === 'invalid_grant' ||
+    error?.response?.data?.error === 'invalid_grant' ||
+    (error?.code === 400 && error?.message?.includes('invalid_grant'))
+  );
+}
+
+/**
+ * Returns current health status parameters of the Google Drive client.
+ */
+export function getDriveStatus() {
+  return {
+    authenticated: isAuthenticated,
+    mode: authenticationMode,
+    folderAccessible: isAuthenticated && !!folderName,
+    folderName: folderName,
+    startupError: startupError,
+  };
+}
+
+/**
+ * Validates Google Drive credentials and caches the active client.
+ * Decides authentication mode once at server startup.
+ */
+export async function initializeGoogleDrive(): Promise<void> {
+  console.log('\nGoogle Drive Authentication');
+  console.log('Checking OAuth credentials...');
+
+  const hasOAuthConfigs =
+    env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_ID.trim() !== '' &&
+    env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_CLIENT_SECRET.trim() !== '' &&
+    env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_REFRESH_TOKEN.trim() !== '';
+
+  if (hasOAuthConfigs) {
+    try {
+      const oauth2Client = new google.auth.OAuth2(
+        env.GOOGLE_DRIVE_CLIENT_ID,
+        env.GOOGLE_DRIVE_CLIENT_SECRET
+      );
+      oauth2Client.setCredentials({
+        refresh_token: env.GOOGLE_DRIVE_REFRESH_TOKEN,
+      });
+      const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+      // Call files.get on root folder to verify credentials
+      const res = await drive.files.get({
+        fileId: env.GOOGLE_DRIVE_FOLDER_ID,
+        fields: 'id, name',
+      });
+
+      driveInstance = drive;
+      authenticationMode = 'oauth';
+      isAuthenticated = true;
+      folderName = res.data.name || 'Unknown';
+      startupError = null;
+
+      console.log('\nGoogle Drive Authentication\n');
+      console.log('Mode: OAuth\n');
+      console.log('Authentication successful.\n');
+      return;
+    } catch (error: any) {
+      useOAuthFailed = true;
+      if (isInvalidGrantError(error)) {
+        console.warn(`
+Google Drive Authentication
+
+OAuth authentication failed.
+
+Reason:
+Refresh token expired or revoked.
+
+Switching to Service Account...
+        `.trim());
+      } else {
+        console.warn(`
+Google Drive Authentication
+
+OAuth authentication failed with an unexpected error.
+Reason: ${error.message}
+
+Switching to Service Account...
+        `.trim());
+      }
+    }
+  } else {
+    console.log('OAuth credentials not fully configured. Switching to Service Account...');
+    useOAuthFailed = true;
+  }
+
+  // Fallback: Service Account
+  try {
+    let auth: InstanceType<typeof google.auth.GoogleAuth>;
+
+    if (env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON && env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON.trim() !== '') {
+      let credentials: object;
+      try {
+        credentials = JSON.parse(env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON);
+      } catch {
+        throw new Error('GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON is not valid JSON.');
+      }
+      auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/drive'],
+      });
+    } else if (env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH && env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH.trim() !== '') {
+      const keyPath = path.resolve(env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH);
+      if (!fs.existsSync(keyPath)) {
+        throw new Error(`Google service account credentials file not found at: ${keyPath}`);
+      }
+      auth = new google.auth.GoogleAuth({
+        keyFile: keyPath,
+        scopes: ['https://www.googleapis.com/auth/drive'],
+      });
+    } else {
+      throw new Error(
+        'Google Drive credentials are not configured. ' +
+        'Set GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON (production) or GOOGLE_SERVICE_ACCOUNT_KEY_PATH (local development).'
+      );
+    }
+
+    const drive = google.drive({ version: 'v3', auth });
+
+    // Validate access to the target folder
+    const res = await drive.files.get({
+      fileId: env.GOOGLE_DRIVE_FOLDER_ID,
+      fields: 'id, name',
+    });
+
+    driveInstance = drive;
+    authenticationMode = 'service-account';
+    isAuthenticated = true;
+    folderName = res.data.name || 'Unknown';
+    startupError = null;
+
+    console.log(`
+Google Drive Authentication
+
+Mode: Service Account
+
+Authentication successful.
+    `.trim());
+  } catch (error: any) {
+    startupError = `Google Drive authentication failed.\n\nNeither OAuth nor Service Account could be initialized.\n\nCheck configuration. Original error: ${error.message}`;
+    console.error(`
+Google Drive authentication failed.
+
+Neither OAuth nor Service Account could be initialized.
+
+Check configuration.
+Original error: ${error.message}
+    `.trim());
+  }
+}
 
 /**
  * Returns an authenticated Google Drive client instance.
@@ -20,6 +180,7 @@ export function getDriveClient() {
 
   // 1. OAuth 2.0 User Credentials (primary, to bypass Service Account quota limitation on personal "My Drive" folders)
   if (
+    !useOAuthFailed &&
     env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_ID.trim() !== '' &&
     env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_CLIENT_SECRET.trim() !== '' &&
     env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_REFRESH_TOKEN.trim() !== ''
@@ -32,6 +193,7 @@ export function getDriveClient() {
       refresh_token: env.GOOGLE_DRIVE_REFRESH_TOKEN,
     });
     driveInstance = google.drive({ version: 'v3', auth: oauth2Client });
+    authenticationMode = 'oauth';
     return driveInstance;
   }
 
@@ -67,6 +229,7 @@ export function getDriveClient() {
   }
 
   driveInstance = google.drive({ version: 'v3', auth });
+  authenticationMode = 'service-account';
   return driveInstance;
 }
 
@@ -75,19 +238,24 @@ export function getDriveClient() {
  */
 export function resetDriveClient(): void {
   driveInstance = null;
+  authenticationMode = 'none';
+  isAuthenticated = false;
+  folderName = null;
+  startupError = null;
+  useOAuthFailed = false;
 }
 
 /**
  * Health check verification method for Google Drive connection
  */
 export async function authenticateDrive(): Promise<any> {
-  const drive = getDriveClient();
-  // Call files.get on root folder to test credentials
-  await drive.files.get({
-    fileId: env.GOOGLE_DRIVE_FOLDER_ID,
-    fields: 'id, name',
-  });
-  return drive;
+  if (authenticationMode === 'none') {
+    await initializeGoogleDrive();
+  }
+  if (!isAuthenticated) {
+    throw new Error(startupError || 'Google Drive authentication failed.');
+  }
+  return driveInstance;
 }
 
 /**

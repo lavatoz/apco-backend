@@ -9,6 +9,7 @@ import { logWorkflowEvent } from '../../services/workflow.service';
 import { AppError } from '../../middleware/error';
 import { Role } from '@prisma/client';
 import { createNotification } from '../../services/notification.service';
+import { verifyAccessToken } from '../../utils/jwt';
 
 // Enforced file upload limits (100MB limit for local development/service account)
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
@@ -74,13 +75,28 @@ async function validateAccess(user: any, projectId: string): Promise<boolean> {
  * Endpoint: POST /api/files/upload
  */
 export async function uploadProjectFile(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const uplId = `UPL-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+  console.log(`[${uplId}]`);
+  console.log(`[${uplId}] [1/10] Upload request received`);
+  let lastTime = Date.now();
+
+  const logStage = (stageNum: number, stageName: string) => {
+    const now = Date.now();
+    const duration = now - lastTime;
+    console.log(`${duration}ms`);
+    console.log(`[${uplId}] [${stageNum}/10] ${stageName}`);
+    lastTime = now;
+  };
+
+  const file = req.file;
+  const { projectId, folderType, isSecured } = req.body;
+
   try {
     const user = req.user!;
-    const file = req.file;
-    const { projectId, folderType, isSecured } = req.body;
-    console.log('UPLOAD RECEIVED PROJECT ID:', projectId);
     const meta = extractReqMeta(req);
 
+    // [2/10] File parsed
+    logStage(2, 'File parsed');
     if (!file) {
       throw new AppError('No file provided for upload.', 400);
     }
@@ -99,7 +115,8 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
       throw new AppError(`MIME type "${file.mimetype}" is not allowed.`, 400);
     }
 
-    // Enforce RBAC
+    // [3/10] Project lookup
+    logStage(3, 'Project lookup');
     await validateAccess(user, projectId);
 
     const project = await prisma.project.findFirst({
@@ -111,6 +128,24 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
       throw new AppError('Project not found.', 404);
     }
 
+    // [4/10] Event lookup
+    logStage(4, 'Event lookup');
+    const eventId = req.body.eventId || req.query.eventId;
+    if (eventId) {
+      const event = await prisma.event.findFirst({
+        where: { id: eventId }
+      });
+      console.log(`[${uplId}] Event found: ${event ? event.name : 'None'}`);
+    } else {
+      console.log(`[${uplId}] No eventId provided for lookup`);
+    }
+
+    // [5/10] Upload category validated
+    logStage(5, 'Upload category validated');
+    console.log(`[${uplId}] Category (folderType): ${folderType}`);
+
+    // [6/10] Folder resolved
+    logStage(6, 'Folder resolved');
     // Automatically ensure the hierarchical folder structure exists and reuse existing folders
     const folderStructure = await getOrCreateProjectFolderStructure(
       project.client.name,
@@ -164,28 +199,21 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
       parentFolderId = folderStructure.rawUploadsFolderId;
     }
 
-    console.log('[DEBUG UPLOAD] folderType received from request body:', folderType);
-    console.log('[DEBUG UPLOAD] folderStructure resolved:', JSON.stringify(folderStructure, null, 2));
-    console.log('[DEBUG UPLOAD] final parentFolderId selected:', parentFolderId);
+    console.log(`[${uplId}] Resolved parentFolderId: ${parentFolderId}`);
 
-    let destFolderName = 'Unknown';
-    try {
-      const gDrive = require('../../services/google-drive.service').getDriveClient();
-      const folderMeta = await gDrive.files.get({ fileId: parentFolderId, fields: 'name' });
-      destFolderName = folderMeta.data.name;
-    } catch (e: any) {
-      destFolderName = `Error fetching folder name: ${e.message}`;
-    }
-    console.log('[DEBUG UPLOAD] upload destination folder name:', destFolderName);
-
-    // Upload to Google Drive
+    // [7/10] Uploading to Google Drive
+    logStage(7, 'Uploading to Google Drive');
     const driveFile = await uploadFile(file.buffer, file.originalname, file.mimetype, parentFolderId || undefined);
 
+    // [8/10] Google Drive upload completed
+    logStage(8, 'Google Drive upload completed');
+    console.log(`[${uplId}] Google Drive File ID: ${driveFile.id}`);
+
+    // [9/10] Database record created
+    logStage(9, 'Database record created');
     // Calculate file hash
     const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
 
-    // Register file in DB
-    console.log('FILE SAVED PROJECT ID:', projectId);
     const fileRecord = await prisma.file.create({
       data: {
         key: `gdrive-${driveFile.id}`,
@@ -297,7 +325,7 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
           await createNotification(
             recipientId,
             'Client Uploaded File',
-            `Client uploaded "${file.originalname}" to project "${project.name}".`
+            `Client uploaded "${file ? file.originalname : 'file'}" to project "${project.name}".`
           );
         }
       }
@@ -305,6 +333,8 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
       console.error('Failed to trigger upload notification flow:', notifError);
     }
 
+    // [10/10] Response sent
+    logStage(10, 'Response sent');
     res.status(201).json({
       id: fileRecord.id,
       fileName: fileRecord.originalName,
@@ -312,7 +342,19 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
       viewLink: driveFile.webViewLink,
       uploadedAt: fileRecord.createdAt
     });
-  } catch (error) {
+  } catch (error: any) {
+    const endNow = Date.now();
+    const duration = endNow - lastTime;
+    console.log(`${duration}ms`);
+    console.error(`[DIAGNOSTIC ERROR] [${uplId}]`);
+    console.error(`Status: ${error.status || 500}`);
+    console.error(`Message: ${error.message}`);
+    console.error(`Stack: ${error.stack}`);
+    console.error(`File name: ${file ? file.originalname : 'N/A'}`);
+    console.error(`Project ID: ${projectId}`);
+    console.error(`Event ID: ${req.body.eventId || 'N/A'}`);
+    console.error(`Category: ${folderType}`);
+    console.error(`Google Drive file ID: N/A`);
     next(error);
   }
 }
@@ -652,6 +694,148 @@ export async function confirmUpload(req: Request, res: Response, next: NextFunct
       message: 'File successfully registered.',
       file
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Endpoint: GET /api/files/:id/thumbnail
+ * Custom authenticated via query token or bearer token
+ */
+export async function downloadThumbnail(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+    
+    // Support token in query parameter for direct image tags
+    const token = (req.query.token as string) || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.split(' ')[1] : null);
+    if (!token) {
+      throw new AppError('Authentication credentials were not provided.', 401);
+    }
+
+    let payload;
+    try {
+      payload = verifyAccessToken(token);
+    } catch (err) {
+      throw new AppError('Invalid or expired token.', 401);
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: {
+        id: true,
+        email: true,
+        role: true
+      }
+    });
+
+    if (!user) {
+      throw new AppError('Authenticated user not found.', 401);
+    }
+
+    const file = await prisma.file.findFirst({
+      where: { id, deletedAt: null }
+    });
+
+    if (!file) {
+      throw new AppError('File not found or has been deleted.', 404);
+    }
+
+    // RBAC: Client, Staff, Admin check
+    if (file.projectId) {
+      await validateAccess(user, file.projectId);
+    } else if (user.role !== Role.SystemAdmin && user.role !== Role.Manager && file.userId !== user.id) {
+      throw new AppError('Access Denied: You do not have permission to access this file.', 403);
+    }
+
+    // Clients are blocked from raw upload folders
+    if (user.role === Role.Client && ['Raw Uploads', 'Raw Videos'].includes(file.category || '')) {
+      throw new AppError('Access Denied: You do not have permission to access files in this category.', 403);
+    }
+
+    let gdriveThumbnail: string | null | undefined = null;
+
+    // 1. Get thumbnail from Google Drive
+    if (file.googleDriveFileId) {
+      try {
+        const { getDriveClient } = require('../../services/google-drive.service');
+        const drive = getDriveClient();
+        const fileInfo = await drive.files.get({
+          fileId: file.googleDriveFileId,
+          fields: 'thumbnailLink'
+        });
+
+        gdriveThumbnail = fileInfo.data.thumbnailLink;
+      } catch (driveErr) {
+        console.error(`[Thumbnail] Google Drive thumbnail fetch failed for file ${file.id}:`, driveErr);
+      }
+    }
+
+    const fallbackToStream = async () => {
+      if (file.googleDriveFileId) {
+        try {
+          const stream = await downloadFileStream(file.googleDriveFileId);
+          res.setHeader('Content-Type', file.mimeType || 'image/jpeg');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          stream.pipe(res);
+          return;
+        } catch (streamErr) {
+          console.error(`[Thumbnail Fallback] Direct GDrive stream failed for fileId: ${file.id}:`, streamErr);
+        }
+      }
+
+      // Local fallback: if not on Drive, stream the local image file directly
+      const candidatePaths = [
+        path.resolve(process.cwd(), file.key),
+        path.resolve(process.cwd(), 'uploads/quotations/pdfs', file.originalName),
+        path.resolve(process.cwd(), 'uploads/agreements/pdfs', file.originalName),
+        path.resolve(process.cwd(), 'uploads/standalone-agreements/pdfs', file.originalName),
+      ];
+
+      let localFilePath: string | null = null;
+      for (const candidate of candidatePaths) {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          localFilePath = candidate;
+          break;
+        }
+      }
+
+      if (localFilePath) {
+        res.setHeader('Content-Type', file.mimeType);
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        fs.createReadStream(localFilePath).pipe(res);
+        return;
+      }
+
+      res.status(404).json({ error: 'Not Found', message: 'Thumbnail not found on Google Drive or local storage.' });
+    };
+
+    if (file.googleDriveFileId) {
+      if (gdriveThumbnail) {
+        const highResThumbnail = gdriveThumbnail.replace(/=s220$/, '=s600');
+        const https = require('https');
+        https.get(highResThumbnail, (response: any) => {
+          if (response.statusCode === 200) {
+            res.setHeader('Content-Type', response.headers['content-type'] || 'image/jpeg');
+            res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24h
+            res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+            response.pipe(res);
+          } else {
+            fallbackToStream();
+          }
+        }).on('error', (err: any) => {
+          console.error(`[Thumbnail] HTTPS request failed for thumbnail URL:`, err);
+          fallbackToStream();
+        });
+        return;
+      } else {
+        await fallbackToStream();
+        return;
+      }
+    }
+
+    await fallbackToStream();
   } catch (error) {
     next(error);
   }

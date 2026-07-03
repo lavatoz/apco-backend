@@ -50,6 +50,14 @@ async function startServer() {
     console.warn('⚠️ Database connection verification failed. App will start, but db operations will fail.');
   }
 
+  // 2. Initialize Google Drive Service
+  try {
+    const { initializeGoogleDrive } = await import('./services/google-drive.service');
+    await initializeGoogleDrive();
+  } catch (error) {
+    console.error('❌ Failed to run Google Drive startup initialization:', error);
+  }
+
   // 2. Start Express Server listener
   const server = app.listen(env.PORT, () => {
     console.log(`📡 APCO server listening on port ${env.PORT} in [${env.NODE_ENV}] mode`);

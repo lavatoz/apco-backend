@@ -64,7 +64,11 @@ import {
 } from '../modules/approvals/approvals.controller';
 
 import {
-  createPersonnel
+  createPersonnel,
+  getPersonnel,
+  getPersonnelById,
+  assignEventToPersonnel,
+  removeEventAssignment
 } from '../modules/personnel/personnel.controller';
 
 import {
@@ -84,7 +88,8 @@ import {
   getEvents,
   createEvent,
   updateEvent,
-  deleteEvent
+  deleteEvent,
+  getPersonnelAssignedToEvent
 } from '../modules/events/events.controller';
 
 // Mock storage service functions since R2 is not configured
@@ -182,9 +187,32 @@ async function runTests() {
 
   // Setup globally mocked models on prisma to prevent any real DB calls
   const mockPrisma = prisma as any;
-  mockPrisma.$transaction = async (callback: (tx: any) => Promise<any>) => {
-    return callback(mockPrisma);
-  };
+
+  const originalTransaction = mockPrisma.$transaction;
+  const originalQueryRaw = mockPrisma.$queryRaw;
+  const originalAuditLog = mockPrisma.auditLog;
+  const originalSecurityEvent = mockPrisma.securityEvent;
+  const originalNotification = mockPrisma.notification;
+  const originalProject = mockPrisma.project;
+  const originalQuotation = mockPrisma.quotation;
+  const originalInvoice = mockPrisma.invoice;
+  const originalCompanyProfile = mockPrisma.companyProfile;
+  const originalPayment = mockPrisma.payment;
+  const originalTask = mockPrisma.task;
+  const originalApproval = mockPrisma.approval;
+  const originalUser = mockPrisma.user;
+  const originalStaffAssignment = mockPrisma.staffAssignment;
+  const originalWorkflowStageAttachment = mockPrisma.workflowStageAttachment;
+  const originalWorkflowActivity = mockPrisma.workflowActivity;
+  const originalClient = mockPrisma.client;
+  const originalFile = mockPrisma.file;
+  const originalWorkflowStage = mockPrisma.workflowStage;
+  const originalAgreement = mockPrisma.agreement;
+
+  try {
+    mockPrisma.$transaction = async (callback: (tx: any) => Promise<any>) => {
+      return callback(mockPrisma);
+    };
   let rawQueryCounter = 0;
   mockPrisma.$queryRaw = async () => {
     rawQueryCounter++;
@@ -335,6 +363,13 @@ async function runTests() {
     findFirst: async () => null,
     create: async (args: any) => ({ id: 'pers-id', ...args.data }),
     update: async (args: any) => ({ id: 'pers-id', ...args.data }),
+    delete: async () => ({}),
+  };
+  mockPrisma.personnelEventAssignment = {
+    findMany: async () => [],
+    findUnique: async () => null,
+    findFirst: async () => null,
+    create: async (args: any) => ({ id: 'assignment-id', ...args.data }),
     delete: async () => ({}),
   };
   mockPrisma.agreementTemplate = {
@@ -2450,10 +2485,223 @@ async function runTests() {
     if (!deletedLink) throw new Error('Attachment linkage was not deleted');
   });
 
+  await testCase('Personnel Event Assignments: Assign personnel to multiple events', async () => {
+    let mockAssignments: any[] = [];
+    
+    mockPrisma.personnel.findUnique = async (args: any) => {
+      if (args.where.id === 'shone-id') {
+        return { id: 'shone-id', name: 'Shone User', role: 'Photographer' };
+      }
+      return null;
+    };
+    
+    mockPrisma.event.findUnique = async (args: any) => {
+      return { id: args.where.id, name: args.where.id === 'event-1' ? 'Save the Date' : 'Engagement' };
+    };
+
+    mockPrisma.personnelEventAssignment.findUnique = async (args: any) => {
+      const { personnelId, eventId } = args.where.personnelId_eventId;
+      return mockAssignments.find(a => a.personnelId === personnelId && a.eventId === eventId) || null;
+    };
+
+    mockPrisma.personnelEventAssignment.create = async (args: any) => {
+      const assignment = { id: `assign-${Date.now()}`, ...args.data };
+      mockAssignments.push(assignment);
+      return assignment;
+    };
+
+    const { req: req1, res: res1, next: next1, getResults: results1 } = createMockRequestResponse(
+      { personnelId: 'shone-id', eventId: 'event-1', notes: 'First event' },
+      {}, {}, {}, adminUser
+    );
+    await assignEventToPersonnel(req1, res1, next1);
+    if (results1().nextError) throw results1().nextError;
+    if (results1().statusCode !== 201) throw new Error(`Expected 201, got ${results1().statusCode}`);
+
+    const { req: req2, res: res2, next: next2, getResults: results2 } = createMockRequestResponse(
+      { personnelId: 'shone-id', eventId: 'event-2', notes: 'Second event' },
+      {}, {}, {}, adminUser
+    );
+    await assignEventToPersonnel(req2, res2, next2);
+    if (results2().nextError) throw results2().nextError;
+    if (results2().statusCode !== 201) throw new Error(`Expected 201, got ${results2().statusCode}`);
+
+    if (mockAssignments.length !== 2) {
+      throw new Error(`Expected 2 assignments, got ${mockAssignments.length}`);
+    }
+  });
+
+  await testCase('Personnel Event Assignments: Prevent duplicate assignments', async () => {
+    let mockAssignments: any[] = [{ id: 'existing-id', personnelId: 'shone-id', eventId: 'event-1' }];
+    
+    mockPrisma.personnel.findUnique = async () => ({ id: 'shone-id', name: 'Shone User' });
+    mockPrisma.event.findUnique = async () => ({ id: 'event-1', name: 'Save the Date' });
+    
+    mockPrisma.personnelEventAssignment.findUnique = async (args: any) => {
+      const { personnelId, eventId } = args.where.personnelId_eventId;
+      return mockAssignments.find(a => a.personnelId === personnelId && a.eventId === eventId) || null;
+    };
+
+    const { req, res, next, getResults } = createMockRequestResponse(
+      { personnelId: 'shone-id', eventId: 'event-1' },
+      {}, {}, {}, adminUser
+    );
+    await assignEventToPersonnel(req, res, next);
+    const { nextError } = getResults();
+    if (!nextError || nextError.statusCode !== 400) {
+      throw new Error('Expected 400 Bad Request for duplicate assignment');
+    }
+  });
+
+  await testCase('Personnel Event Assignments: Delete removes only one assignment', async () => {
+    let mockAssignments = [
+      { id: 'assign-1', personnelId: 'shone-id', eventId: 'event-1' },
+      { id: 'assign-2', personnelId: 'shone-id', eventId: 'event-2' }
+    ];
+
+    mockPrisma.personnelEventAssignment.findUnique = async (args: any) => {
+      if (args.where.id) {
+        return mockAssignments.find(a => a.id === args.where.id) || null;
+      }
+      const { personnelId, eventId } = args.where.personnelId_eventId;
+      return mockAssignments.find(a => a.personnelId === personnelId && a.eventId === eventId) || null;
+    };
+
+    mockPrisma.personnelEventAssignment.delete = async (args: any) => {
+      let deleted: any = null;
+      if (args.where.id) {
+        deleted = mockAssignments.find(a => a.id === args.where.id);
+        mockAssignments = mockAssignments.filter(a => a.id !== args.where.id);
+      } else {
+        const { personnelId, eventId } = args.where.personnelId_eventId;
+        deleted = mockAssignments.find(a => a.personnelId === personnelId && a.eventId === eventId);
+        mockAssignments = mockAssignments.filter(a => !(a.personnelId === personnelId && a.eventId === eventId));
+      }
+      return deleted;
+    };
+
+    const { req, res, next, getResults } = createMockRequestResponse(
+      {},
+      { id: 'assign-1' },
+      {}, {}, adminUser
+    );
+    await removeEventAssignment(req, res, next);
+    if (getResults().nextError) throw getResults().nextError;
+    if (getResults().statusCode !== 200) throw new Error(`Expected 200, got ${getResults().statusCode}`);
+
+    if (mockAssignments.length !== 1 || mockAssignments[0].id !== 'assign-2') {
+      throw new Error('Delete did not remove exactly one assignment.');
+    }
+  });
+
+  await testCase('Personnel Event Assignments: API formats arrays and returns correct response', async () => {
+    mockPrisma.personnel.findUnique = async () => ({
+      id: 'shone-id',
+      name: 'Shone User',
+      role: 'Photographer',
+      assignments: [
+        { event: { id: 'event-1', name: 'Save the Date' } },
+        { event: { id: 'event-2', name: 'Engagement' } }
+      ]
+    });
+
+    const { req, res, next, getResults } = createMockRequestResponse(
+      {},
+      { id: 'shone-id' },
+      {}, {}, adminUser
+    );
+    await getPersonnelById(req, res, next);
+    const { nextError, responseData } = getResults();
+    if (nextError) throw nextError;
+    if (!responseData || !responseData.personnel) {
+      throw new Error('Response did not contain personnel object');
+    }
+    const { assignedEvents } = responseData.personnel;
+    if (!assignedEvents || assignedEvents.length !== 2) {
+      throw new Error('Response did not contain correct assignedEvents array');
+    }
+    if (assignedEvents[0].title !== 'Save the Date' || assignedEvents[1].title !== 'Engagement') {
+      throw new Error('Events did not have correct titles mapped');
+    }
+  });
+
+  await testCase('Personnel Event Assignments: Retrieve all staff assigned to one event', async () => {
+    mockPrisma.event.findUnique = async () => ({
+      id: 'event-1',
+      name: 'Save the Date',
+      personnelAssignments: [
+        { personnel: { id: 'shone-id', name: 'Shone User', role: 'Photographer' } }
+      ]
+    });
+
+    const { req, res, next, getResults } = createMockRequestResponse(
+      {},
+      { id: 'event-1' },
+      {}, {}, adminUser
+    );
+    await getPersonnelAssignedToEvent(req, res, next);
+    const { nextError, responseData } = getResults();
+    if (nextError) throw nextError;
+    if (!Array.isArray(responseData) || responseData.length !== 1 || responseData[0].name !== 'Shone User') {
+      throw new Error('Failed to retrieve correct personnel assigned to event');
+    }
+  });
+
+  await testCase('Personnel Event Assignments: API list formats arrays and returns correct response', async () => {
+    mockPrisma.personnel.findMany = async () => [
+      {
+        id: 'shone-id',
+        name: 'Shone User',
+        role: 'Photographer',
+        assignments: [
+          { event: { id: 'event-1', name: 'Save the Date' } }
+        ]
+      }
+    ];
+
+    const { req, res, next, getResults } = createMockRequestResponse(
+      {}, {}, {}, {}, adminUser
+    );
+    await getPersonnel(req, res, next);
+    const { nextError, responseData } = getResults();
+    if (nextError) throw nextError;
+    if (!Array.isArray(responseData) || responseData.length !== 1) {
+      throw new Error('Response did not contain array of personnel');
+    }
+    const { assignedEvents } = responseData[0];
+    if (!assignedEvents || assignedEvents.length !== 1 || assignedEvents[0].title !== 'Save the Date') {
+      throw new Error('Assigned events list was not formatted correctly on personnel list endpoint');
+    }
+  });
+
   console.log('\n📊 Comprehensive Integration Tests Summary:');
   console.log(`   Passed: ${passedCount}`);
   console.log(`   Failed: ${failedCount}`);
   console.log('------------------------------');
+
+  } finally {
+    // Restore original prisma models
+    mockPrisma.$transaction = originalTransaction;
+    mockPrisma.$queryRaw = originalQueryRaw;
+    mockPrisma.auditLog = originalAuditLog;
+    mockPrisma.securityEvent = originalSecurityEvent;
+    mockPrisma.notification = originalNotification;
+    mockPrisma.project = originalProject;
+    mockPrisma.quotation = originalQuotation;
+    mockPrisma.invoice = originalInvoice;
+    mockPrisma.companyProfile = originalCompanyProfile;
+    mockPrisma.payment = originalPayment;
+    mockPrisma.task = originalTask;
+    mockPrisma.approval = originalApproval;
+    mockPrisma.user = originalUser;
+    mockPrisma.staffAssignment = originalStaffAssignment;
+    mockPrisma.workflowStageAttachment = originalWorkflowStageAttachment;
+    mockPrisma.workflowActivity = originalWorkflowActivity;
+    mockPrisma.client = originalClient;
+    mockPrisma.file = originalFile;
+    mockPrisma.workflowStage = originalWorkflowStage;
+    mockPrisma.agreement = originalAgreement;
+  }
 
   if (failedCount > 0) {
     process.exit(1);

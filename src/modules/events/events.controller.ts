@@ -3,6 +3,7 @@ import { prisma } from '../../config/database';
 import { AppError } from '../../middleware/error';
 import { logAudit, extractReqMeta } from '../../services/audit.service';
 import { Role } from '@prisma/client';
+import { getPersonnelForEvent } from '../../services/team-assignment.service';
 
 export async function getEvents(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -153,6 +154,19 @@ export async function deleteEvent(req: Request, res: Response, next: NextFunctio
     });
 
     res.status(200).json({ message: 'Event deleted successfully.' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Retrieve all personnel assigned to a specific event
+ */
+export async function getPersonnelAssignedToEvent(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { id } = req.params;
+    const personnel = await getPersonnelForEvent(id);
+    res.status(200).json(personnel);
   } catch (error) {
     next(error);
   }

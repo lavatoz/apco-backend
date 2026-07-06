@@ -29,6 +29,34 @@ class NotificationServiceImpl {
         });
       },
     });
+
+    // Register the Push transport (integrated FCM)
+    this.registerTransport({
+      name: 'Push',
+      send: async (userId: string, payload: NotificationPayload) => {
+        try {
+          const { PushNotificationService } = await import('./push-notification.service');
+          
+          let data: Record<string, string> | undefined = undefined;
+          if (payload.metadata) {
+            data = {};
+            for (const [key, value] of Object.entries(payload.metadata)) {
+              if (value !== null && value !== undefined) {
+                data[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+              }
+            }
+          }
+
+          await PushNotificationService.sendToUser(userId, {
+            title: payload.title,
+            body: payload.message,
+            data,
+          });
+        } catch (error) {
+          console.error(`[NotificationService] Push transport failed for user ${userId}:`, error);
+        }
+      },
+    });
   }
 
   /**

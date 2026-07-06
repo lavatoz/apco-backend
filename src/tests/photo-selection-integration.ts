@@ -330,6 +330,34 @@ export async function runTests() {
     }
   });
 
+  await testCase('Transition validation allows unlocking gallery (from SELECTION_SUBMITTED to SELECTION_IN_PROGRESS)', async () => {
+    // Current status is SELECTION_SUBMITTED (index 2).
+    // Transitioning back to SELECTION_IN_PROGRESS (index 1) should succeed.
+    const { req, res, next, results } = mockRequestResponse({ status: GalleryStatus.SELECTION_IN_PROGRESS }, { id: projectRecord.id }, {}, null, staffUser);
+    await updateGalleryStatus(req, res, next);
+
+    const { statusCode, responseData, nextError } = results();
+    if (nextError) throw nextError;
+    if (statusCode !== 200) throw new Error(`Expected 200, got ${statusCode}`);
+    if (responseData.status !== GalleryStatus.SELECTION_IN_PROGRESS) throw new Error('Expected status update to SELECTION_IN_PROGRESS');
+    if (responseData.selectionLocked) throw new Error('Expected selectionLocked = false');
+
+    // Verify DB
+    const gallery = await prisma.projectGallery.findUnique({ where: { projectId: projectRecord.id } });
+    if (gallery?.selectionLocked || gallery?.currentStatus !== GalleryStatus.SELECTION_IN_PROGRESS) {
+      throw new Error('Gallery unlock not persisted correctly in database');
+    }
+
+    // Cleanup: restore status to SELECTION_SUBMITTED for subsequent tests
+    await prisma.projectGallery.update({
+      where: { projectId: projectRecord.id },
+      data: {
+        currentStatus: GalleryStatus.SELECTION_SUBMITTED,
+        selectionLocked: true
+      }
+    });
+  });
+
   await testCase('Transition validation allows valid consecutive status change', async () => {
     // Transitioning from SELECTION_SUBMITTED (index 2) to READY_FOR_EDITING (index 3) is allowed.
     const { req, res, next, results } = mockRequestResponse({ status: GalleryStatus.READY_FOR_EDITING }, { id: projectRecord.id }, {}, null, staffUser);

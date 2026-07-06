@@ -4,6 +4,7 @@ import fileRoutes from '../modules/files/files.routes';
 import usersRoutes from '../modules/users/users.routes';
 import clientsRoutes from '../modules/clients/clients.routes';
 import projectsRoutes from '../modules/projects/projects.routes';
+import messagesRoutes from '../modules/messages/messages.routes';
 import invoicesRoutes from '../modules/invoices/invoices.routes';
 import expensesRoutes from '../modules/expenses/expenses.routes';
 import { 
@@ -59,6 +60,7 @@ router.use('/files', fileRoutes);
 router.use('/users', usersRoutes);
 router.use('/clients', clientsRoutes);
 router.use('/events', eventsRoutes);
+router.use('/projects', messagesRoutes);
 router.use('/projects', projectsRoutes);
 router.use('/invoices', invoicesRoutes);
 router.use('/quotations', quotationRouter);

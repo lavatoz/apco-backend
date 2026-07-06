@@ -40,6 +40,8 @@ model User {
   sessions            UserSession[]
   workflowStages      WorkflowStage[]
   workflowActivities  WorkflowActivity[]
+  deviceTokens        DeviceToken[]
+  projectMessages     ProjectMessage[]
 }
 
 model RefreshToken {
@@ -121,6 +123,7 @@ model Project {
   galleryPhotos        GalleryPhoto[]
   photoSelections      PhotoSelection[]
   photoReviews         PhotoReview[]
+  projectMessages      ProjectMessage[]
 }
 
 model StaffAssignment {
@@ -694,4 +697,32 @@ model PhotoReview {
   @@unique([galleryPhotoId, clientId, projectId])
 }
 
+model DeviceToken {
+  id          String   @id @default(uuid())
+  userId      String
+  token       String   @unique
+  deviceId    String?
+  platform    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastUsedAt  DateTime @default(now())
 
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ProjectMessage {
+  id        String    @id @default(uuid())
+  projectId String
+  senderId  String
+  message   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sender    User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}

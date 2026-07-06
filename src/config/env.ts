@@ -29,6 +29,9 @@ const envSchema = z.object({
   GOOGLE_DRIVE_CLIENT_SECRET: z.string().optional().or(z.literal('')),
   GOOGLE_DRIVE_REFRESH_TOKEN: z.string().optional().or(z.literal('')),
   BYPASS_MFA: z.string().optional().transform((val) => val === 'true'),
+  FIREBASE_PROJECT_ID: z.string().optional().or(z.literal('')),
+  FIREBASE_CLIENT_EMAIL: z.string().optional().or(z.literal('')),
+  FIREBASE_PRIVATE_KEY: z.string().optional().or(z.literal('')),
 });
 
 type Env = z.infer<typeof envSchema>;

@@ -5,6 +5,7 @@ import { runTests as runGoogleDriveTests } from './google-drive-integration';
 import { runTests as runAgreementTests } from './agreement-generation-integration';
 import { runTests as runStandaloneAgreementTests } from './standalone-agreements-integration';
 import { runTests as runPhotoSelectionTests } from './photo-selection-integration';
+import { runTests as runMessagingTests } from './messaging-integration';
 
 async function executeSuite() {
   console.log('🚀 Running APCO Complete Test Suite...');
@@ -27,6 +28,9 @@ async function executeSuite() {
 
     // Run Photo Selection Integration
     await runPhotoSelectionTests();
+
+    // Run Messaging Integration
+    await runMessagingTests();
     
     console.log('\n🎉 ALL TEST SUITES PASSED SUCCESSFULLY!');
     process.exit(0);

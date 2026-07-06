@@ -11,14 +11,38 @@ import { env } from './config/env';
 const app = express();
 
 // Temporary request logging middleware
-app.use((req, _res, next) => {
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    if (req.originalUrl.includes('/auth/login')) {
+      console.log(`[CORS-DEBUG] Response sent: ${req.method} ${req.originalUrl}`);
+      console.log(`[CORS-DEBUG] Status Code: ${res.statusCode}`);
+      console.log(`[CORS-DEBUG] Headers:`, JSON.stringify(res.getHeaders(), null, 2));
+    }
+  });
   console.log(`${req.method} ${req.originalUrl}`);
   console.log(`User-Agent: ${req.headers['user-agent'] || ''}`);
   console.log(`IP: ${req.ip}`);
   next();
 });
 
-// 1. Secure Headers via Helmet
+
+// 1. CORS Configuration
+app.use(
+  cors({
+    origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(','),
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Request-ID',
+      'X-Correlation-ID'
+    ],
+    exposedHeaders: ['X-Request-ID'],
+    credentials: true,
+  })
+);
+
+// 2. Secure Headers via Helmet
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -43,21 +67,6 @@ app.use(
   })
 );
 
-// 2. CORS Configuration
-app.use(
-  cors({
-    origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(','),
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Request-ID',
-      'X-Correlation-ID'
-    ],
-    exposedHeaders: ['X-Request-ID'],
-    credentials: true,
-  })
-);
 
 // 3. Request Correlation ID
 app.use(requestIdMiddleware);

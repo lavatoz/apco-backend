@@ -133,3 +133,83 @@ export async function getUnreadCount(req: Request, res: Response, next: NextFunc
   }
 }
 
+/**
+ * Register or update a device token for push notifications
+ */
+export async function registerDeviceToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { token, deviceId, platform } = req.body;
+    const user = req.user!;
+
+    const deviceToken = await prisma.deviceToken.upsert({
+      where: { token },
+      update: {
+        userId: user.id,
+        deviceId: deviceId !== undefined ? deviceId : undefined,
+        platform: platform !== undefined ? platform : undefined,
+        lastUsedAt: new Date()
+      },
+      create: {
+        token,
+        userId: user.id,
+        deviceId: deviceId || null,
+        platform: platform || null,
+        lastUsedAt: new Date()
+      }
+    });
+
+    res.status(200).json({
+      message: 'Device token registered successfully.',
+      deviceToken
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Remove/unregister a device token
+ */
+export async function deleteDeviceToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { token } = req.body;
+    const user = req.user!;
+
+    const deleteResult = await prisma.deviceToken.deleteMany({
+      where: {
+        token,
+        userId: user.id
+      }
+    });
+
+    res.status(200).json({
+      message: 'Device token deleted successfully.',
+      deletedCount: deleteResult.count
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Send a test push notification to the authenticated user's registered devices
+ */
+export async function testPushNotification(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const user = req.user!;
+    const { PushNotificationService } = await import('../../services/push-notification.service');
+
+    await PushNotificationService.sendToUser(user.id, {
+      title: 'APCO Test',
+      body: 'Push notifications are working successfully.',
+    });
+
+    res.status(200).json({
+      message: 'Test push notification dispatched successfully.'
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+

@@ -404,8 +404,12 @@ export async function updateGalleryStatus(req: Request, res: Response, next: Nex
     const currentIndex = GALLERY_STATUS_ORDER.indexOf(currentStatus);
     const newIndex = GALLERY_STATUS_ORDER.indexOf(newStatus as GalleryStatus);
 
-    // Enforce strict sequential transitions (no skipping)
-    if (newIndex !== currentIndex + 1) {
+    // Enforce strict sequential transitions (no skipping) except for unlocking
+    const isUnlockTransition = 
+      currentStatus === GalleryStatus.SELECTION_SUBMITTED && 
+      newStatus === GalleryStatus.SELECTION_IN_PROGRESS;
+
+    if (newIndex !== currentIndex + 1 && !isUnlockTransition) {
       throw new AppError(`Invalid transition: Cannot skip stages. Transitioning from ${currentStatus} to ${newStatus} is prohibited. Allowed next status: ${GALLERY_STATUS_ORDER[currentIndex + 1] || 'None'}`, 400);
     }
 

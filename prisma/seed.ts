@@ -6,14 +6,6 @@ import path from 'path';
 const prisma = new PrismaClient();
 
 async function main() {
-  const nodeEnv = process.env.NODE_ENV || 'development';
-
-  //if (nodeEnv === 'production') {
-  //console.log('⚠️ Seed script skipped in production environment.');
-  //return;
-  //}
-
-
   console.log('🌱 Starting database seeding...');
 
   const adminEmail = 'admin@apco.local';

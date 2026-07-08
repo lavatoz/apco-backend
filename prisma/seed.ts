@@ -7,11 +7,12 @@ const prisma = new PrismaClient();
 
 async function main() {
   const nodeEnv = process.env.NODE_ENV || 'development';
-  
-  if (nodeEnv === 'production') {
-    console.log('⚠️ Seed script skipped in production environment.');
-    return;
-  }
+
+  //if (nodeEnv === 'production') {
+  //console.log('⚠️ Seed script skipped in production environment.');
+  //return;
+  //}
+
 
   console.log('🌱 Starting database seeding...');
 
@@ -25,7 +26,7 @@ async function main() {
 
   if (!existingAdmin) {
     console.log(`👤 Seeding default SystemAdmin user (${adminEmail})...`);
-    
+
     // Hash password using Argon2
     const passwordHash = await argon2.hash(defaultPassword, {
       type: argon2.argon2id,
@@ -60,7 +61,7 @@ async function main() {
   if (!existingTemplate) {
     console.log(`📄 Seeding default Standalone Agreement Template...`);
     const templateFilePath = path.join(__dirname, '../src/templates/wedding-agreement.txt');
-    
+
     if (fs.existsSync(templateFilePath)) {
       const content = fs.readFileSync(templateFilePath, 'utf8');
       await prisma.standaloneAgreementTemplate.create({

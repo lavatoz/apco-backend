@@ -8,6 +8,8 @@
 | `JWT_SECRET` | HS256 signing secret (min 16 chars) | `a-very-long-random-secret-string` |
 | `JWT_REFRESH_SECRET` | Separate secret for refresh tokens (min 16 chars) | `another-very-long-random-secret` |
 | `APP_URL` | Public base URL of the backend API | `https://apco-api.onrender.com` |
+| `BACKEND_URL` | Deployed backend API base URL | `https://apco-backend-production.up.railway.app` |
+| `FRONTEND_URL` | Deployed frontend single page application URL | `https://your-vercel-app.vercel.app` |
 | `CORS_ORIGIN` | Allowed frontend origin for CORS | `https://apco.vercel.app` |
 | `GOOGLE_DRIVE_FOLDER_ID` | Root Google Drive folder ID for file storage | `1ABC...xyz` |
 
@@ -54,6 +56,8 @@ GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./secrets/service-account.json
 PORT=3000
 NODE_ENV=development
 APP_URL=http://localhost:3000
+BACKEND_URL=http://localhost:3000
+FRONTEND_URL=http://localhost:5173
 CORS_ORIGIN=http://localhost:5173
 
 # Database (Neon PostgreSQL)
@@ -73,14 +77,16 @@ RESEND_API_KEY=
 
 ---
 
-## Production `.env` Template (Render)
+## Production `.env` Template (Render/Railway)
 
 ```dotenv
 # Server
 PORT=3000
 NODE_ENV=production
-APP_URL=https://apco-api.onrender.com
-CORS_ORIGIN=https://apco.vercel.app
+APP_URL=https://apco-backend-production.up.railway.app
+BACKEND_URL=https://apco-backend-production.up.railway.app
+FRONTEND_URL=https://your-vercel-app.vercel.app
+CORS_ORIGIN=https://your-vercel-app.vercel.app
 
 # Database
 DATABASE_URL=postgresql://username:password@ep-xxx.neon.tech/apco?sslmode=require

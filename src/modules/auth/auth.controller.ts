@@ -810,7 +810,7 @@ export async function requestEmailVerification(req: Request, res: Response, next
  * Endpoint: Confirm Email Verification
  */
 export async function confirmEmailVerification(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const frontendBaseUrl = env.CORS_ORIGIN ? env.CORS_ORIGIN.split(',')[0].trim() : 'http://localhost:5173';
+  const frontendBaseUrl = env.FRONTEND_URL;
   
   const renderErrorPage = (message: string) => {
     return `

@@ -18,6 +18,8 @@ const envSchema = z.object({
   RESEND_FROM_EMAIL: z.string().optional().or(z.literal('')),
   RESEND_LOGO_URL: z.string().optional().or(z.literal('')),
   APP_URL: z.string().url('APP_URL must be a valid URL'),
+  BACKEND_URL: z.string().url('BACKEND_URL must be a valid URL'),
+  FRONTEND_URL: z.string().url('FRONTEND_URL must be a valid URL'),
   CORS_ORIGIN: z.string().min(1, 'CORS_ORIGIN is required'),
   GOOGLE_DRIVE_FOLDER_ID: z.string().min(1, 'GOOGLE_DRIVE_FOLDER_ID is required'),
   // Production: JSON credentials string from environment variable

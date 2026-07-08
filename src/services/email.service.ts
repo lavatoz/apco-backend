@@ -29,7 +29,7 @@ function getSenderEmail(): string {
  * Sends a password reset email to the user
  */
 export async function sendPasswordResetEmail(email: string, token: string): Promise<void> {
-  const resetLink = `${env.APP_URL}/auth/reset-password?token=${token}`;
+  const resetLink = `${env.FRONTEND_URL}/auth/reset-password?token=${token}`;
   const subject = 'Reset Your APCO Password';
   const html = `
 <!DOCTYPE html>
@@ -184,7 +184,7 @@ export async function sendPasswordResetEmail(email: string, token: string): Prom
  * Sends an email verification link to the user
  */
 export async function sendVerificationEmail(email: string, token: string): Promise<void> {
-  const verificationLink = `${env.APP_URL}/api/auth/email-verification/confirm?token=${token}`;
+  const verificationLink = `${env.BACKEND_URL}/api/auth/email-verification/confirm?token=${token}`;
   const subject = 'Verify Your APCO Email Address';
   const html = `
 <!DOCTYPE html>

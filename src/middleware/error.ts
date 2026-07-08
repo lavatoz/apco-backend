@@ -59,6 +59,17 @@ export function errorHandler(
   // 3. Handle Prisma Errors
   if (err.code && err.clientVersion) {
     // Prisma database error (e.g. duplicate key, foreign key failure)
+    const prismaCode = err.code;
+    const modelName = err.meta?.modelName || (err.message && err.message.match(/on model '([^']+)'/)?.[1]) || 'Unknown';
+    const fieldName = err.meta?.target || err.meta?.field_name || 'Unknown';
+    
+    console.error(`[PRISMA_ERROR] RequestID: ${requestId}`);
+    console.error(`  Code: ${prismaCode}`);
+    console.error(`  Model: ${modelName}`);
+    console.error(`  Fields: ${JSON.stringify(fieldName)}`);
+    console.error(`  Metadata: ${JSON.stringify(err.meta || {})}`);
+    console.error(`  Stack trace:\n${err.stack || err.message}`);
+
     res.status(400).json({
       error: 'Database Error',
       message: env.NODE_ENV === 'production' 

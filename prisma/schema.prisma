@@ -73,6 +73,7 @@ model UserSession {
 
 model Client {
   id          String      @id @default(uuid())
+  clientCode  String      @unique
   name        String
   email       String      @unique
   phone       String?
@@ -96,6 +97,7 @@ model Client {
 
 model Project {
   id                   String            @id @default(uuid())
+  projectCode          String            @unique
   name                 String
   description          String?
   status               String            @default("Draft")
@@ -141,6 +143,7 @@ model StaffAssignment {
 
 model Invoice {
   id              String        @id @default(uuid())
+  invoiceCode     String        @unique
   invoiceNumber   String        @unique
   amount          Decimal       @db.Decimal(12, 2)
   status          String        @default("Draft")
@@ -171,6 +174,7 @@ model Invoice {
 
 model Quotation {
   id              String          @id @default(uuid())
+  quotationCode   String          @unique
   quotationNumber String          @unique
   amount          Decimal         @db.Decimal(12, 2)
   status          String          @default("Draft")
@@ -475,6 +479,7 @@ enum Role {
 
 model Event {
   id                 String                     @id
+  eventCode          String                     @unique
   clientId           String
   name               String
   date               DateTime
@@ -507,6 +512,7 @@ model StandaloneAgreementTemplate {
 
 model StandaloneAgreement {
   id               String                        @id @default(uuid())
+  agreementCode    String                        @unique
   clientId         String
   templateId       String
   title            String

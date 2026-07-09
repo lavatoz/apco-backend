@@ -4,6 +4,7 @@ import { AppError } from '../../middleware/error';
 import { logAudit, extractReqMeta } from '../../services/audit.service';
 import { Role } from '@prisma/client';
 import { getPersonnelForEvent } from '../../services/team-assignment.service';
+import { EventsService } from './events.service';
 
 export async function getEvents(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -44,23 +45,7 @@ export async function createEvent(req: Request, res: Response, next: NextFunctio
       throw new AppError('Only administrators or managers can create events manually.', 403);
     }
 
-    const event = await prisma.event.create({
-      data: {
-        id: body.id || `event_${Date.now()}`,
-        clientId: body.clientId,
-        name: body.name,
-        date: new Date(body.date),
-        startTime: body.startTime || null,
-        endTime: body.endTime || null,
-        progress: body.progress || 0,
-        actualCompletedAt: body.actualCompletedAt ? new Date(body.actualCompletedAt) : null,
-        brideLocation: body.brideLocation || null,
-        groomLocation: body.groomLocation || null,
-        venueLocation: body.venueLocation || null,
-        notes: body.notes || null,
-        status: body.status || 'Scheduled',
-      },
-    });
+    const event = await EventsService.createEvent(body);
 
     await logAudit({
       userId: user.id,

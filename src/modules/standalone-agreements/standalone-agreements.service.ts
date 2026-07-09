@@ -1,6 +1,7 @@
 import { prisma } from '../../config/database';
 import { AppError } from '../../middleware/error';
 import { StandaloneAgreementTemplate, StandaloneAgreement, StandaloneAgreementDocument, StandaloneAgreementSignature, DocumentType, Role } from '@prisma/client';
+import { DisplayIdGenerator } from '../../services/display-id.service';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import fs from 'fs';
 import path from 'path';
@@ -130,6 +131,7 @@ export class StandaloneAgreementsService {
     }
 
     // 4. Create and return StandaloneAgreement
+    const agreementCode = await DisplayIdGenerator.getNextId('AGR');
     return prisma.standaloneAgreement.create({
       data: {
         clientId,
@@ -139,6 +141,7 @@ export class StandaloneAgreementsService {
         generatedContent: template.content,
         assignedAt: new Date(),
         linkedQuoteId: linkedQuoteId || null,
+        agreementCode,
       },
     });
   }
@@ -1124,9 +1127,11 @@ export class StandaloneAgreementsService {
       const prefix = quotation.brand ? quotation.brand.slice(0, 3).toUpperCase() : 'APCO';
       const invoiceNumber = await generateDocumentNumber('INV', prefix);
 
+      const invoiceCode = await DisplayIdGenerator.getNextId('INV');
       await prisma.invoice.create({
         data: {
           invoiceNumber,
+          invoiceCode,
           projectId: quotation.projectId,
           clientId: quotation.clientId,
           amount: quotation.amount,
@@ -1212,6 +1217,7 @@ export class StandaloneAgreementsService {
       });
     }
 
+    const agreementCode = await DisplayIdGenerator.getNextId('AGR');
     return prisma.standaloneAgreement.create({
       data: {
         clientId: quotation.clientId,
@@ -1221,6 +1227,7 @@ export class StandaloneAgreementsService {
         generatedContent: template.content,
         assignedAt: new Date(),
         linkedQuoteId: quotation.id,
+        agreementCode,
       },
       include: {
         template: true,

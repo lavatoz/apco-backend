@@ -3,7 +3,7 @@ import { prisma } from '../../config/database';
 import { logAudit, extractReqMeta } from '../../services/audit.service';
 import { AppError } from '../../middleware/error';
 import { Role } from '@prisma/client';
-import crypto from 'crypto';
+import { ClientsService } from './clients.service';
 
 /**
  * List clients with role-based and query-level protection
@@ -83,102 +83,16 @@ export async function createClient(req: Request, res: Response, next: NextFuncti
       throw new AppError('Only administrators or managers can create new client records.', 403);
     }
 
-    // Check duplicate active client email
-    const existing = await prisma.client.findFirst({
-      where: { email: body.email, deletedAt: null },
-    });
+    const fullCreatedClient = await ClientsService.createClient(body, user);
 
-    if (existing) {
-      throw new AppError('A client with this email already exists.', 400);
+    if (fullCreatedClient) {
+      await logAudit({
+        userId: user.id,
+        action: 'CLIENT_CREATE',
+        details: { clientId: fullCreatedClient.id, email: fullCreatedClient.email },
+        ...meta,
+      });
     }
-
-    // Check duplicate user email
-    const existingUser = await prisma.user.findUnique({
-      where: { email: body.email },
-    });
-
-    if (existingUser) {
-      throw new AppError('A user account with this email address already exists.', 400);
-    }
-
-    const nameParts = (body.name || '').trim().split(/\s+/);
-    const firstName = nameParts[0] || 'Client';
-    const lastName = nameParts.slice(1).join(' ') || 'User';
-    const setupToken = crypto.randomBytes(32).toString('hex');
-
-    const { events, ...clientData } = body;
-
-    const client = await prisma.$transaction(async (tx) => {
-      // 1. Create client record
-      const newClient = await tx.client.create({
-        data: clientData,
-      });
-
-      // 2. Provision User record with Pending Activation status
-      await tx.user.create({
-        data: {
-          email: newClient.email,
-          passwordHash: null,
-          firstName,
-          lastName,
-          role: Role.Client,
-          mustChangePassword: true,
-          emailVerified: true,
-          setupToken,
-          status: 'Pending Activation',
-          linkedClientId: newClient.id,
-        },
-      });
-
-      // 3. Create events if any
-      if (events && events.length > 0) {
-        await tx.event.createMany({
-          data: events.map((ev: any) => ({
-            id: ev.id,
-            clientId: newClient.id,
-            name: ev.name,
-            date: new Date(ev.date),
-            startTime: ev.startTime || null,
-            endTime: ev.endTime || null,
-            progress: ev.progress || 0,
-            actualCompletedAt: ev.actualCompletedAt ? new Date(ev.actualCompletedAt) : null,
-            brideLocation: ev.brideLocation || null,
-            groomLocation: ev.groomLocation || null,
-            venueLocation: ev.venueLocation || null,
-            notes: ev.notes || null,
-            status: ev.status || 'Scheduled',
-          })),
-        });
-      }
-
-      // 4. Provision default Project record
-      await tx.project.create({
-        data: {
-          name: `${newClient.name}'s Project`,
-          status: 'Draft',
-          clientId: newClient.id,
-          stage: 'Booked',
-        },
-      });
-
-      return newClient;
-    });
-
-    await logAudit({
-      userId: user.id,
-      action: 'CLIENT_CREATE',
-      details: { clientId: client.id, email: client.email },
-      ...meta,
-    });
-
-    const fullCreatedClient = await prisma.client.findFirst({
-      where: { id: client.id },
-      include: {
-        events: {
-          orderBy: { date: 'asc' },
-        },
-      },
-    });
 
     res.status(201).json(fullCreatedClient);
   } catch (error) {
@@ -209,84 +123,16 @@ export async function updateClient(req: Request, res: Response, next: NextFuncti
       throw new AppError('Client record not found.', 404);
     }
 
-    const { events, ...clientData } = body;
+    const fullUpdatedClient = await ClientsService.updateClient(id, body, user, existing);
 
-    const client = await prisma.$transaction(async (tx) => {
-      // 1. Update client record
-      const updatedClient = await tx.client.update({
-        where: { id },
-        data: clientData,
+    if (fullUpdatedClient) {
+      await logAudit({
+        userId: user.id,
+        action: 'CLIENT_UPDATE',
+        details: { clientId: id, email: fullUpdatedClient.email },
+        ...meta,
       });
-
-      // 2. Sync corresponding User record if email or name changes
-      if (clientData.email || clientData.name) {
-        const userUpdateData: any = {};
-        if (clientData.email) userUpdateData.email = clientData.email;
-        if (clientData.name) {
-          const nameParts = clientData.name.trim().split(/\s+/);
-          userUpdateData.firstName = nameParts[0] || 'Client';
-          userUpdateData.lastName = nameParts.slice(1).join(' ') || 'User';
-        }
-
-        // Try to update by linkedClientId first, fallback to email match
-        await tx.user.updateMany({
-          where: {
-            OR: [
-              { linkedClientId: id },
-              { email: existing.email, role: Role.Client }
-            ]
-          },
-          data: userUpdateData,
-        });
-      }
-
-      // 3. Sync events
-      if (events) {
-        // Delete all existing events for this client
-        await tx.event.deleteMany({
-          where: { clientId: id },
-        });
-
-        // Create new ones
-        if (events.length > 0) {
-          await tx.event.createMany({
-            data: events.map((ev: any) => ({
-              id: ev.id,
-              clientId: id,
-              name: ev.name,
-              date: new Date(ev.date),
-              startTime: ev.startTime || null,
-              endTime: ev.endTime || null,
-              progress: ev.progress || 0,
-              actualCompletedAt: ev.actualCompletedAt ? new Date(ev.actualCompletedAt) : null,
-              brideLocation: ev.brideLocation || null,
-              groomLocation: ev.groomLocation || null,
-              venueLocation: ev.venueLocation || null,
-              notes: ev.notes || null,
-              status: ev.status || 'Scheduled',
-            })),
-          });
-        }
-      }
-
-      return updatedClient;
-    });
-
-    await logAudit({
-      userId: user.id,
-      action: 'CLIENT_UPDATE',
-      details: { clientId: id, email: client.email },
-      ...meta,
-    });
-
-    const fullUpdatedClient = await prisma.client.findFirst({
-      where: { id: client.id },
-      include: {
-        events: {
-          orderBy: { date: 'asc' },
-        },
-      },
-    });
+    }
 
     res.status(200).json(fullUpdatedClient);
   } catch (error) {

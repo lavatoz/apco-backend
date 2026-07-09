@@ -161,7 +161,8 @@ export async function runTests() {
     update: {},
     create: {
       name: 'Msg Client Corp',
-      email: 'msg-client@example.com'
+      email: 'msg-client@example.com',
+      clientCode: 'CLI-2026-TEST1'
     }
   });
 
@@ -170,7 +171,8 @@ export async function runTests() {
     update: {},
     create: {
       name: 'Other Client Corp',
-      email: 'msg-other-client@example.com'
+      email: 'msg-other-client@example.com',
+      clientCode: 'CLI-2026-TEST2'
     }
   });
 
@@ -190,7 +192,8 @@ export async function runTests() {
     data: {
       name: 'Messaging Test Project',
       clientId: clientRecord.id,
-      stage: 'Booked'
+      stage: 'Booked',
+      projectCode: 'PRJ-2026-TEST1'
     }
   });
 

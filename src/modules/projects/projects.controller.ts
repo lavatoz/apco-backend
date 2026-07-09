@@ -5,7 +5,7 @@ import { logWorkflowEvent } from '../../services/workflow.service';
 import { createNotification } from '../../services/notification.service';
 import { AppError } from '../../middleware/error';
 import { Role } from '@prisma/client';
-import { createProjectFolderStructure } from '../../services/google-drive.service';
+import { ProjectsService } from './projects.service';
 
 /**
  * Synchronize task assignments for a project.
@@ -341,64 +341,12 @@ export async function createProject(req: Request, res: Response, next: NextFunct
       throw new AppError('Only administrators or managers can initialize projects.', 403);
     }
 
-    // Verify client exists
-    const client = await prisma.client.findFirst({
-      where: { id: clientId, deletedAt: null },
-    });
-    if (!client) {
-      throw new AppError('Client record not found.', 400);
-    }
-
-    // Auto-provision Google Drive folder structures
-    let folderStructure: any = {};
-    try {
-      folderStructure = await createProjectFolderStructure(client.name, name);
-    } catch (driveError) {
-      console.error('Google Drive folder structure provisioning failed:', driveError);
-    }
-
-    const project = await prisma.$transaction(async (tx) => {
-      const p = await tx.project.create({
-        data: {
-          name,
-          description,
-          status,
-          clientId,
-          driveFolderId: folderStructure.driveFolderId || null,
-          galleryFolderId: folderStructure.galleryFolderId || null,
-          deliverablesFolderId: folderStructure.deliverablesFolderId || null,
-          agreementsFolderId: folderStructure.agreementsFolderId || null,
-          invoicesFolderId: folderStructure.invoicesFolderId || null,
-          quotationsFolderId: folderStructure.quotationsFolderId || null,
-        },
-      });
-
-      const stages = [
-        'CLIENT_ONBOARDING',
-        'AGREEMENT',
-        'ADVANCE_PAYMENT',
-        'PRE_PRODUCTION',
-        'SHOOT',
-        'POST_PRODUCTION',
-        'EDITING',
-        'DELIVERY',
-        'PROJECT_CLOSURE',
-      ];
-
-      for (let i = 0; i < stages.length; i++) {
-        await tx.workflowStage.create({
-          data: {
-            projectId: p.id,
-            stageType: stages[i] as any,
-            displayOrder: i,
-            status: i === 0 ? 'IN_PROGRESS' : 'PENDING',
-            startedAt: i === 0 ? new Date() : null,
-          },
-        });
-      }
-
-      return p;
-    });
+    const { project, folderStructure } = await ProjectsService.createProject(
+      name,
+      description,
+      status,
+      clientId
+    );
 
     // Automatically generate workflow events for project creation
     await logWorkflowEvent({

@@ -148,7 +148,8 @@ export async function runTests() {
     update: {},
     create: {
       name: 'Gallery Client LLC',
-      email: 'gallery-client@example.com'
+      email: 'gallery-client@example.com',
+      clientCode: 'CLI-2026-TEST3'
     }
   });
 
@@ -163,7 +164,8 @@ export async function runTests() {
     data: {
       name: 'Test Curation Project',
       clientId: clientRecord.id,
-      stage: 'Booked'
+      stage: 'Booked',
+      projectCode: 'PRJ-2026-TEST2'
     }
   });
 

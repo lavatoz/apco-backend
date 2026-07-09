@@ -15,6 +15,7 @@ async function main() {
         description: "A beautiful wedding shoot",
         status: "Draft",
         clientId: "a9fa79d9-9df5-4651-979d-cd4d428a031b",
+        projectCode: "PRJ-2026-9999",
         stage: "Booked"
       }
     });

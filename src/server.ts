@@ -1,6 +1,7 @@
 import app from './app';
 import { env } from './config/env';
 import { checkDatabaseConnection, prisma } from './config/database';
+import { DisplayIdGenerator } from './services/display-id.service';
 
 async function repairMissingProjects() {
   try {
@@ -19,11 +20,13 @@ async function repairMissingProjects() {
     if (clientsWithoutProjects.length > 0) {
       console.log(`🔧 Found ${clientsWithoutProjects.length} client(s) with missing project records. Provisioning default projects...`);
       for (const client of clientsWithoutProjects) {
+        const projectCode = await DisplayIdGenerator.getNextId('PRJ');
         await prisma.project.create({
           data: {
             name: `${client.name}'s Project`,
             status: 'Draft',
             clientId: client.id,
+            projectCode,
             stage: 'Booked'
           }
         });

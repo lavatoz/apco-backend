@@ -11,6 +11,7 @@ import { Role } from '@prisma/client';
 import { generateQuotationPdf } from '../../services/quotation-pdf.service';
 import { aahaLogoBase64, tinyToesLogoBase64 } from '../../services/default-logo';
 import { getOrCreateProjectFolderStructure } from '../../services/google-drive.service';
+import { InvoicesService } from './invoices.service';
 
 /**
  * Resolves prefix for a project based on its type or falls back to default company
@@ -136,21 +137,7 @@ export async function createInvoice(req: Request, res: Response, next: NextFunct
       projectId,
       clientId,
       amount,
-      status,
       dueDate,
-      discountValue,
-      discountType,
-      taxPercent,
-      shippingCost,
-      notes,
-      termsSummary,
-      companyLogoUrl,
-      paymentTerms,
-      templateId,
-      templateVersion,
-      brandId,
-      brand,
-      items
     } = req.body;
     const meta = extractReqMeta(req);
 
@@ -167,39 +154,12 @@ export async function createInvoice(req: Request, res: Response, next: NextFunct
     const prefix = await resolveCompanyPrefix(projectId);
     const invoiceNumber = await generateDocumentNumber('INV', prefix);
 
-    const invoice = await prisma.invoice.create({
-      data: {
-        invoiceNumber,
-        projectId,
-        clientId,
-        amount,
-        status,
-        dueDate: new Date(dueDate),
-        discountValue,
-        discountType,
-        taxPercent,
-        shippingCost,
-        notes,
-        termsSummary,
-        companyLogoUrl,
-        paymentTerms,
-        templateId,
-        templateVersion,
-        brandId,
-        brand,
-        items: items && items.length > 0 ? {
-          create: items.map((item: any) => ({
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            amount: item.amount,
-          }))
-        } : undefined
-      },
-      include: {
-        items: true,
-      }
-    });
+    const invoice = await InvoicesService.createInvoice(
+      req.body,
+      project,
+      client,
+      invoiceNumber
+    );
 
     await logWorkflowEvent({
       projectId,
@@ -419,21 +379,6 @@ export async function createQuotation(req: Request, res: Response, next: NextFun
       projectId,
       clientId,
       amount,
-      status,
-      validUntil,
-      discountValue,
-      discountType,
-      taxPercent,
-      shippingCost,
-      notes,
-      termsSummary,
-      companyLogoUrl,
-      paymentTerms,
-      templateId,
-      templateVersion,
-      brandId,
-      brand,
-      items
     } = req.body;
     const meta = extractReqMeta(req);
 
@@ -450,39 +395,12 @@ export async function createQuotation(req: Request, res: Response, next: NextFun
     const prefix = await resolveCompanyPrefix(projectId);
     const quotationNumber = await generateDocumentNumber('QUO', prefix);
 
-    const quotation = await prisma.quotation.create({
-      data: {
-        quotationNumber,
-        projectId,
-        clientId,
-        amount,
-        status,
-        validUntil: new Date(validUntil),
-        discountValue,
-        discountType,
-        taxPercent,
-        shippingCost,
-        notes,
-        termsSummary,
-        companyLogoUrl,
-        paymentTerms,
-        templateId,
-        templateVersion,
-        brandId,
-        brand,
-        items: items && items.length > 0 ? {
-          create: items.map((item: any) => ({
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            amount: item.amount,
-          }))
-        } : undefined
-      },
-      include: {
-        items: true,
-      }
-    });
+    const quotation = await InvoicesService.createQuotation(
+      req.body,
+      project,
+      client,
+      quotationNumber
+    );
 
     await logWorkflowEvent({
       projectId,

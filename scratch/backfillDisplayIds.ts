@@ -8,7 +8,7 @@ async function main() {
 
   // 1. Clients
   const clients = await prisma.client.findMany({
-    where: { clientCode: null },
+    where: { clientCode: null as any },
     orderBy: { createdAt: 'asc' },
   });
   console.log(`Found ${clients.length} clients to backfill.`);
@@ -23,7 +23,7 @@ async function main() {
 
   // 2. Projects
   const projects = await prisma.project.findMany({
-    where: { projectCode: null },
+    where: { projectCode: null as any },
     orderBy: { createdAt: 'asc' },
   });
   console.log(`Found ${projects.length} projects to backfill.`);
@@ -38,7 +38,7 @@ async function main() {
 
   // 3. Quotations
   const quotations = await prisma.quotation.findMany({
-    where: { quotationCode: null },
+    where: { quotationCode: null as any },
     orderBy: { createdAt: 'asc' },
   });
   console.log(`Found ${quotations.length} quotations to backfill.`);
@@ -53,7 +53,7 @@ async function main() {
 
   // 4. Invoices
   const invoices = await prisma.invoice.findMany({
-    where: { invoiceCode: null },
+    where: { invoiceCode: null as any },
     orderBy: { createdAt: 'asc' },
   });
   console.log(`Found ${invoices.length} invoices to backfill.`);
@@ -68,7 +68,7 @@ async function main() {
 
   // 5. StandaloneAgreements
   const agreements = await prisma.standaloneAgreement.findMany({
-    where: { agreementCode: null },
+    where: { agreementCode: null as any },
     orderBy: { createdAt: 'asc' },
   });
   console.log(`Found ${agreements.length} agreements to backfill.`);
@@ -83,7 +83,7 @@ async function main() {
 
   // 6. Events
   const events = await prisma.event.findMany({
-    where: { eventCode: null },
+    where: { eventCode: null as any },
     orderBy: { createdAt: 'asc' },
   });
   console.log(`Found ${events.length} events to backfill.`);

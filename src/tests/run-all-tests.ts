@@ -6,6 +6,9 @@ import { runTests as runAgreementTests } from './agreement-generation-integratio
 import { runTests as runStandaloneAgreementTests } from './standalone-agreements-integration';
 import { runTests as runPhotoSelectionTests } from './photo-selection-integration';
 import { runTests as runMessagingTests } from './messaging-integration';
+import { runTests as runWebsiteGalleryUploadTests } from './website-gallery-upload-integration';
+import { runTests as runWebsiteGalleryCrudTests } from './website-gallery-crud-integration';
+import { runTests as runWebsiteDivisionsTests } from './divisions-crud-integration';
 
 async function executeSuite() {
   console.log('🚀 Running APCO Complete Test Suite...');
@@ -31,6 +34,15 @@ async function executeSuite() {
 
     // Run Messaging Integration
     await runMessagingTests();
+
+    // Run Website Gallery Upload Integration
+    await runWebsiteGalleryUploadTests();
+
+    // Run Website Gallery CRUD Integration
+    await runWebsiteGalleryCrudTests();
+
+    // Run Website Divisions CRUD & Upload Integration
+    await runWebsiteDivisionsTests();
     
     console.log('\n🎉 ALL TEST SUITES PASSED SUCCESSFULLY!');
     process.exit(0);

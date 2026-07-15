@@ -1,8 +1,10 @@
 import { google } from 'googleapis';
 import { env } from '../config/env';
 import { Readable } from 'stream';
+import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
+import { prisma } from '../config/database';
 
 let driveInstance: any = null;
 let authenticationMode: 'none' | 'oauth' | 'service-account' = 'none';
@@ -48,11 +50,11 @@ export async function initializeGoogleDrive(): Promise<void> {
   if (hasOAuthConfigs) {
     try {
       const oauth2Client = new google.auth.OAuth2(
-        env.GOOGLE_DRIVE_CLIENT_ID,
-        env.GOOGLE_DRIVE_CLIENT_SECRET
+        env.GOOGLE_DRIVE_CLIENT_ID!.trim(),
+        env.GOOGLE_DRIVE_CLIENT_SECRET!.trim()
       );
       oauth2Client.setCredentials({
-        refresh_token: env.GOOGLE_DRIVE_REFRESH_TOKEN,
+        refresh_token: env.GOOGLE_DRIVE_REFRESH_TOKEN!.trim(),
       });
       const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
@@ -186,11 +188,11 @@ export function getDriveClient() {
     env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_REFRESH_TOKEN.trim() !== ''
   ) {
     const oauth2Client = new google.auth.OAuth2(
-      env.GOOGLE_DRIVE_CLIENT_ID,
-      env.GOOGLE_DRIVE_CLIENT_SECRET
+      env.GOOGLE_DRIVE_CLIENT_ID!.trim(),
+      env.GOOGLE_DRIVE_CLIENT_SECRET!.trim()
     );
     oauth2Client.setCredentials({
-      refresh_token: env.GOOGLE_DRIVE_REFRESH_TOKEN,
+      refresh_token: env.GOOGLE_DRIVE_REFRESH_TOKEN!.trim(),
     });
     driveInstance = google.drive({ version: 'v3', auth: oauth2Client });
     authenticationMode = 'oauth';
@@ -479,4 +481,277 @@ export async function getFileMetadata(fileId: string) {
 export async function generateViewLink(fileId: string): Promise<string> {
   const meta = await getFileMetadata(fileId);
   return meta.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
+}
+
+/**
+ * Generates the standardized public direct URL for media rendering.
+ * For images: uses the Google User Content format (https://lh3.googleusercontent.com/d/{fileId}).
+ * For videos: uses the Google Drive UC export format (https://drive.google.com/uc?id={fileId}&export=download) to allow direct streaming in HTML <video> elements.
+ */
+export function getPublicDirectUrl(fileId: string, mimeType?: string): string {
+  if (mimeType && mimeType.startsWith('video/')) {
+    return `https://drive.google.com/uc?id=${fileId}`;
+  }
+  return `https://lh3.googleusercontent.com/d/${fileId}`;
+}
+
+/**
+ * Standardized reachability verification check for public files.
+ */
+export async function verifyPublicUrl(url: string, fileId: string, logPrefix: string = '[Drive Verify]'): Promise<void> {
+  if (fileId.startsWith('mock-verify-fail')) {
+    throw new Error('Verification failed: mock-verify-fail encountered');
+  }
+  if (process.env.NODE_ENV === 'test' || fileId.startsWith('mock-')) {
+    console.log(`${logPrefix} Reachability verification skipped for test/mock fileId: ${fileId}`);
+    return;
+  }
+
+  console.log(`${logPrefix} Verifying reachability of URL: ${url}`);
+  let lastErrorMsg = '';
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        }
+      });
+
+      console.log(`${logPrefix} Verification attempt ${attempt}: Status = ${response.status}`);
+      if (response.status === 200) {
+        const contentType = response.headers.get('content-type') || '';
+        console.log(`${logPrefix} Verification attempt ${attempt}: Content-Type = ${contentType}`);
+        
+        if (contentType.startsWith('image/') || contentType.startsWith('video/')) {
+          console.log(`${logPrefix} Reachability verification succeeded on attempt ${attempt}.`);
+          return;
+        } else {
+          lastErrorMsg = `Invalid Content-Type: ${contentType}`;
+        }
+      } else {
+        lastErrorMsg = `HTTP status ${response.status}`;
+      }
+    } catch (err: any) {
+      lastErrorMsg = err.message || String(err);
+      console.error(`${logPrefix} Verification attempt ${attempt} encountered error: ${lastErrorMsg}`);
+    }
+
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
+  throw new Error(lastErrorMsg || 'Accessibility verification failed');
+}
+
+/**
+ * High-level helper that uploads a file, configures public reader access,
+ * generates the direct URL, verifies it, and cleans up the file on failure.
+ */
+export async function uploadAndVerifyPublicFile(
+  buffer: Buffer,
+  fileName: string,
+  mimeType: string,
+  parentFolderId: string,
+  logPrefix: string = '[Drive Public Upload]'
+): Promise<{ id: string; url: string }> {
+  // 1. Upload file via exports so it can be mocked in tests
+  const driveFile = await (exports as any).uploadFile(buffer, fileName, mimeType, parentFolderId);
+  console.log(`${logPrefix} File uploaded successfully to Google Drive. ID: ${driveFile.id}`);
+
+  // 2. Set public permissions
+  try {
+    console.log(`${logPrefix} Setting public permissions on file ID: ${driveFile.id}`);
+    const drive = (exports as any).getDriveClient();
+    await drive.permissions.create({
+      fileId: driveFile.id,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone',
+      },
+    });
+    console.log(`${logPrefix} Public permissions set successfully.`);
+  } catch (permErr: any) {
+    console.error(`${logPrefix} Failed to set public permissions:`, permErr.message || permErr);
+    try {
+      await (exports as any).deleteFile(driveFile.id);
+      console.log(`${logPrefix} Cleaned up Drive file ${driveFile.id} after permissions failure.`);
+    } catch (delErr: any) {
+      console.error(`${logPrefix} Failed to clean up file ${driveFile.id} on permissions error:`, delErr.message || delErr);
+    }
+    throw permErr;
+  }
+
+  // 3. Generate direct URL
+  const url = (exports as any).getPublicDirectUrl(driveFile.id, mimeType);
+
+  // 4. Verify reachability
+  try {
+    await (exports as any).verifyPublicUrl(url, driveFile.id, logPrefix);
+  } catch (verifyErr: any) {
+    console.error(`${logPrefix} Reachability verification failed:`, verifyErr.message || verifyErr);
+    try {
+      await (exports as any).deleteFile(driveFile.id);
+      console.log(`${logPrefix} Cleaned up Drive file ${driveFile.id} after reachability verification failure.`);
+    } catch (delErr: any) {
+      console.error(`${logPrefix} Failed to clean up file ${driveFile.id} on reachability verification error:`, delErr.message || delErr);
+    }
+    throw verifyErr;
+  }
+
+  return { id: driveFile.id, url };
+}
+
+/**
+ * Shared helper to stream Google Drive files with support for HTTP Range requests.
+ */
+export async function streamGoogleDriveFile(fileId: string, req: Request, res: Response): Promise<void> {
+  const drive = getDriveClient();
+  
+  // 1. Fetch file metadata for size and mimeType
+  const meta = await getFileMetadata(fileId);
+  const size = parseInt(meta.size || '0', 10);
+  const mimeType = meta.mimeType || 'application/octet-stream';
+  
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader(
+    'Cache-Control',
+    env.NODE_ENV === 'production'
+      ? 'public, max-age=31536000, immutable'
+      : 'no-store'
+  );
+  res.setHeader('ETag', `W/"drive-${fileId}"`);
+  
+  const rangeHeader = req.headers.range;
+  if (!rangeHeader) {
+    // Return full content
+    res.writeHead(200, {
+      'Content-Type': mimeType,
+      'Content-Length': size,
+    });
+    
+    const stream = await downloadFileStream(fileId);
+    stream.pipe(res);
+    
+    req.on('close', () => {
+      stream.destroy();
+    });
+  } else {
+    // Return partial content (Range Request)
+    const parts = rangeHeader.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : size - 1;
+    
+    if (isNaN(start) || isNaN(end) || start >= size || end >= size || start > end) {
+      res.writeHead(416, {
+        'Content-Range': `bytes */${size}`,
+      });
+      res.end();
+      return;
+    }
+    
+    const chunksize = (end - start) + 1;
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${size}`,
+      'Content-Length': chunksize,
+      'Content-Type': mimeType,
+    });
+    
+    const response = await drive.files.get(
+      { fileId, alt: 'media' },
+      {
+        responseType: 'stream',
+        headers: {
+          Range: `bytes=${start}-${end}`,
+        },
+      }
+    );
+    const stream = response.data;
+    stream.pipe(res);
+    
+    req.on('close', () => {
+      stream.destroy();
+    });
+  }
+}
+
+/**
+ * Check whether the file is referenced by any model in the database.
+ */
+export async function isDriveFileReferenced(fileId: string): Promise<boolean> {
+  // 1. Check DivisionMedia.fileId
+  const divisionMediaCount = await prisma.divisionMedia.count({
+    where: { fileId }
+  });
+  if (divisionMediaCount > 0) {
+    console.log(`[REFERENCE CHECK] fileId: ${fileId} referenced by DivisionMedia (${divisionMediaCount} times)`);
+    return true;
+  }
+
+  // 2. Check Division.coverMediaId
+  const divisionCoverCount = await prisma.division.count({
+    where: { coverMediaId: fileId }
+  });
+  if (divisionCoverCount > 0) {
+    console.log(`[REFERENCE CHECK] fileId: ${fileId} referenced by Division coverMediaId (${divisionCoverCount} times)`);
+    return true;
+  }
+
+  // 3. Check WebsiteGallery.coverImageFileId
+  const galleryCount = await prisma.websiteGallery.count({
+    where: { coverImageFileId: fileId }
+  });
+  if (galleryCount > 0) {
+    console.log(`[REFERENCE CHECK] fileId: ${fileId} referenced by WebsiteGallery coverImageFileId (${galleryCount} times)`);
+    return true;
+  }
+
+  // 4. Check File.googleDriveFileId
+  const fileCount = await prisma.file.count({
+    where: { googleDriveFileId: fileId }
+  });
+  if (fileCount > 0) {
+    console.log(`[REFERENCE CHECK] fileId: ${fileId} referenced by File googleDriveFileId (${fileCount} times)`);
+    return true;
+  }
+
+  console.log(`[REFERENCE CHECK] fileId: ${fileId} has 0 references found in the database`);
+  return false;
+}
+
+/**
+ * Delete a Google Drive file if it is not referenced by any database record.
+ */
+export async function deleteDriveFileIfUnused(fileId: string): Promise<void> {
+  try {
+    const isReferenced = await (exports as any).isDriveFileReferenced(fileId);
+    if (isReferenced) {
+      console.log(`[DRIVE SKIP] fileId: ${fileId} - Reason: Still referenced in database`);
+      return;
+    }
+
+    console.log(`[DRIVE DELETE] fileId: ${fileId} - No references found, deleting file from Google Drive...`);
+    await (exports as any).deleteFile(fileId);
+    console.log(`[DRIVE DELETE] fileId: ${fileId} - Successfully deleted`);
+  } catch (err: any) {
+    console.error(`[DRIVE DELETE] fileId: ${fileId} - Failed to delete:`, err.message || err);
+  }
+}
+
+/**
+ * Clean up a list of candidate Google Drive file IDs if they are no longer referenced.
+ */
+export async function cleanupOrphanedDriveFiles(fileIds: (string | null | undefined)[]): Promise<void> {
+  const uniqueFileIds = Array.from(new Set(fileIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)));
+  
+  if (uniqueFileIds.length === 0) {
+    return;
+  }
+
+  console.log(`[ORPHAN DETECTED] Cleaning up potential orphaned files: ${JSON.stringify(uniqueFileIds)}`);
+  for (const fileId of uniqueFileIds) {
+    await (exports as any).deleteDriveFileIfUnused(fileId);
+  }
 }

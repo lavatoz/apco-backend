@@ -732,3 +732,49 @@ model ProjectMessage {
 
   @@index([projectId, createdAt])
 }
+
+model WebsiteGallery {
+  id               String   @id @default(uuid())
+  title            String
+  coverImageUrl    String
+  coverImageFileId String
+  instagramUrl     String?
+  published        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Division {
+  id             String   @id @default(uuid())
+  name           String
+  description    String
+  instagramUrl   String?
+  published      Boolean  @default(false)
+  coverMediaId   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  media          DivisionMedia[]
+}
+
+model DivisionMedia {
+  id          String   @id @default(uuid())
+  divisionId  String
+
+  type        DivisionMediaType
+
+  position    Int
+
+  url         String
+
+  fileId      String
+
+  createdAt   DateTime @default(now())
+
+  division    Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+}
+
+enum DivisionMediaType {
+  IMAGE
+  VIDEO
+}

@@ -45,6 +45,9 @@ app.use(
 // 2. Secure Headers via Helmet
 app.use(
   helmet({
+    crossOriginResourcePolicy: {
+      policy: 'cross-origin'
+    },
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],

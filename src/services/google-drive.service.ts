@@ -447,7 +447,7 @@ export async function uploadFile(
  * Retrieves a binary stream for downloading from Google Drive.
  */
 export async function downloadFileStream(fileId: string): Promise<any> {
-  const drive = getDriveClient();
+  const drive = (exports as any).getDriveClient();
   const response = await drive.files.get(
     { fileId, alt: 'media' },
     { responseType: 'stream' }
@@ -467,7 +467,7 @@ export async function deleteFile(fileId: string): Promise<void> {
  * Gets metadata of a file from Google Drive.
  */
 export async function getFileMetadata(fileId: string) {
-  const drive = getDriveClient();
+  const drive = (exports as any).getDriveClient();
   const response = await drive.files.get({
     fileId,
     fields: 'id, name, mimeType, size, webViewLink, createdTime',
@@ -608,7 +608,7 @@ export async function uploadAndVerifyPublicFile(
  * Shared helper to stream Google Drive files with support for HTTP Range requests.
  */
 export async function streamGoogleDriveFile(fileId: string, req: Request, res: Response): Promise<void> {
-  const drive = getDriveClient();
+  const drive = (exports as any).getDriveClient();
   
   // 1. Fetch file metadata for size and mimeType
   const meta = await getFileMetadata(fileId);
@@ -623,6 +623,7 @@ export async function streamGoogleDriveFile(fileId: string, req: Request, res: R
       : 'no-store'
   );
   res.setHeader('ETag', `W/"drive-${fileId}"`);
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   
   const rangeHeader = req.headers.range;
   if (!rangeHeader) {

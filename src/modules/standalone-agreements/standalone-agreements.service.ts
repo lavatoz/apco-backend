@@ -6,6 +6,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import fs from 'fs';
 import path from 'path';
 import { aahaLogoBase64, tinyToesLogoBase64 } from '../../services/default-logo';
+import { securePdfDocument } from '../../services/pdf-security.service';
 
 const parseHexColor = (hex: string | undefined): any => {
   if (!hex) return rgb(0.23, 0.51, 0.96); // Default APCO blue
@@ -1042,6 +1043,7 @@ export class StandaloneAgreementsService {
 
     // 6. Save PDF to disk
     const pdfBytes = await pdfDoc.save();
+    const { securedBuffer } = await securePdfDocument(Buffer.from(pdfBytes));
     const dirPath = path.resolve(process.cwd(), 'uploads/standalone-agreements/pdfs');
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
@@ -1049,7 +1051,7 @@ export class StandaloneAgreementsService {
     
     const fileName = `signed-agreement-${agreement.id}.pdf`;
     const filePath = path.join(dirPath, fileName);
-    fs.writeFileSync(filePath, pdfBytes);
+    fs.writeFileSync(filePath, securedBuffer);
 
     const relativePath = `uploads/standalone-agreements/pdfs/${fileName}`;
 

@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import fs from 'fs';
 import path from 'path';
+import { securePdfDocument } from './pdf-security.service';
 
 export interface AgreementData {
   clientName: string;
@@ -680,5 +681,6 @@ export async function generateAgreementPdf(data: AgreementData): Promise<Buffer>
 
   // 4. Save document to Buffer
   const pdfBytes = await pdfDoc.save();
-  return Buffer.from(pdfBytes);
+  const { securedBuffer } = await securePdfDocument(Buffer.from(pdfBytes));
+  return securedBuffer;
 }

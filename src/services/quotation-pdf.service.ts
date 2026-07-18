@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import QRCode from 'qrcode';
 import { loadFooterImage, applyBrandingFooterToDoc } from './pdf-branding.service';
+import { securePdfDocument } from './pdf-security.service';
 
 export interface QuotationItemData {
   description: string;
@@ -791,7 +792,8 @@ export async function generateQuotationPdf(data: QuotationPdfData): Promise<Buff
     applyBrandingFooterToDoc(pdfDoc, footerEmbed, pageWidth, contentWidth);
 
     const pdfBytes = await pdfDoc.save();
-    return Buffer.from(pdfBytes);
+    const { securedBuffer } = await securePdfDocument(Buffer.from(pdfBytes));
+    return securedBuffer;
   } else {
     // -------------------------------------------------------------------------
     // OLD DARK-MODE LAYOUT (FALLBACK)
@@ -1110,6 +1112,7 @@ export async function generateQuotationPdf(data: QuotationPdfData): Promise<Buff
     applyBrandingFooterToDoc(pdfDoc, footerEmbed, pageWidth, contentWidth);
 
     const pdfBytes = await pdfDoc.save();
-    return Buffer.from(pdfBytes);
+    const { securedBuffer } = await securePdfDocument(Buffer.from(pdfBytes));
+    return securedBuffer;
   }
 }

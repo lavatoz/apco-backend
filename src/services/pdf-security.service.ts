@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { prisma } from '../config/database';
+import { encryptPDF } from '@pdfsmaller/pdf-encrypt';
 
 export interface DocumentMetadata {
   documentId: string;
@@ -61,18 +62,77 @@ export function generateVerificationMetadata(
 }
 
 /**
- * Simulates applying visual security tags (Watermark / Metadata injection / Encryption config hooks)
+ * Encrypts a PDF document using AES-256 with the specified passwords.
+ */
+export async function encryptPdfDocument(
+  fileBuffer: Buffer,
+  userPassword: string,
+  ownerPassword?: string
+): Promise<Buffer> {
+  const encryptedBytes = await encryptPDF(new Uint8Array(fileBuffer), userPassword, {
+    algorithm: 'AES-256',
+    ownerPassword: ownerPassword || undefined,
+    allowCopying: false,
+    allowModifying: false,
+    allowPrinting: true,
+  });
+  return Buffer.from(encryptedBytes);
+}
+
+/**
+ * Applies visual security tags (Watermark / Metadata injection) and encrypts the document
+ * using AES-256 if password protection is enabled in the settings or explicitly requested.
  */
 export async function securePdfDocument(
   fileBuffer: Buffer,
-  _options: { watermarkText?: string; encrypt?: boolean; password?: string }
+  options?: { watermarkText?: string; encrypt?: boolean; password?: string }
 ): Promise<{ securedBuffer: Buffer; fingerprint: string }> {
-  // Real implementations would use pdf-lib or pdfkit.
-  // For the backend foundation, we return the calculated fingerprint.
-  const fingerprint = calculateDocumentHash(fileBuffer);
+  let securedBuffer = fileBuffer;
+
+  // Read settings from the GlobalSetting database table
+  const settings = await prisma.globalSetting.findMany();
+  const dbOwnerPassword = settings.find(s => s.key === 'pdfOwnerPassword')?.value;
+  const dbPasswordMode = settings.find(s => s.key === 'pdfPasswordMode')?.value || 'open-password';
+  const dbUserPassword = settings.find(s => s.key === 'pdfUserPassword')?.value;
+
+  // Encryption is enabled if pdfOwnerPassword is set in DB, OR options.encrypt is explicitly true
+  const isEncryptionEnabled = !!(dbOwnerPassword && dbOwnerPassword.trim() !== '');
+  const shouldEncrypt = options?.encrypt !== undefined ? options.encrypt : isEncryptionEnabled;
+
+  // Determine user/owner passwords matching the mode
+  const ownerPassword = dbOwnerPassword || 'Artisans@2026';
+  const useOpenPassword = dbPasswordMode === 'open-password';
+  
+  let userPassword = '';
+  if (useOpenPassword) {
+    userPassword = dbUserPassword || dbOwnerPassword || '';
+  }
+
+  // Override userPassword if explicitly supplied in options
+  const actualUserPassword = options?.password !== undefined ? options.password : userPassword;
+
+  // Logs as requested by the user
+  console.log(`[securePdfDocument] pdfPasswordMode: ${dbPasswordMode}`);
+  console.log(`[securePdfDocument] pdfUserPassword: ${dbUserPassword}`);
+  console.log(`[securePdfDocument] pdfOwnerPassword: ${dbOwnerPassword}`);
+  console.log(`[securePdfDocument] userPassword (passed to encryptPDF): ${actualUserPassword}`);
+  console.log(`[securePdfDocument] ownerPassword (passed to encryptPDF): ${ownerPassword}`);
+
+  if (shouldEncrypt) {
+    try {
+      securedBuffer = await encryptPdfDocument(fileBuffer, actualUserPassword, ownerPassword);
+      console.log(`[securePdfDocument] PDF buffer size after encryption: ${securedBuffer.length} bytes`);
+    } catch (error: any) {
+      console.error('❌ PDF Encryption failed:', error);
+      throw new Error(`PDF encryption failed: ${error.message || error}`);
+    }
+  }
+
+  // Calculate fingerprint on the final secured buffer
+  const fingerprint = calculateDocumentHash(securedBuffer);
   
   return {
-    securedBuffer: fileBuffer, // Placeholder for the actual modified buffer
+    securedBuffer,
     fingerprint,
   };
 }

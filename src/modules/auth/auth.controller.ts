@@ -12,9 +12,7 @@ import {
 import { 
   generateMfaSecret, 
   generateQrCodeDataUrl, 
-  verifyMfaToken, 
-  generateBackupCodes, 
-  verifyAndConsumeBackupCode 
+  verifyMfaToken
 } from '../../services/mfa.service';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../../services/email.service';
 import { logAudit, extractReqMeta } from '../../services/audit.service';
@@ -276,26 +274,8 @@ export async function verifyMfaLogin(req: Request, res: Response, next: NextFunc
       throw new AppError('MFA verification is not configured for this user.', 400);
     }
 
-    // Check TOTP code or backup code
-    let isCodeValid = verifyMfaToken(code, user.mfaSecret);
-    let isBackupUsed = false;
-
-    if (!isCodeValid && user.backupCodes) {
-      // Check backup codes
-      const backupCodesList = user.backupCodes as string[];
-      const { isValid, updatedHashedCodes } = await verifyAndConsumeBackupCode(code, backupCodesList);
-      
-      if (isValid && updatedHashedCodes) {
-        isCodeValid = true;
-        isBackupUsed = true;
-        
-        // Update user backup codes list
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { backupCodes: updatedHashedCodes },
-        });
-      }
-    }
+    // Verify TOTP code
+    const isCodeValid = verifyMfaToken(code, user.mfaSecret);
 
     if (!isCodeValid) {
       await logSecurityEvent({
@@ -313,14 +293,14 @@ export async function verifyMfaLogin(req: Request, res: Response, next: NextFunc
     await logSecurityEvent({
       userId: user.id,
       eventType: 'MFA_SUCCESS',
-      details: { backupUsed: isBackupUsed },
+      details: { backupUsed: false },
       ...meta,
     });
 
     await logAudit({
       userId: user.id,
       action: 'LOGIN',
-      details: { mfaUsed: true, backupUsed: isBackupUsed },
+      details: { mfaUsed: true, backupUsed: false },
       ...meta,
     });
 
@@ -410,15 +390,11 @@ export async function enableMfa(req: Request, res: Response, next: NextFunction)
       throw new AppError('Invalid MFA code. Verification failed.', 400);
     }
 
-    // Generate Backup Codes
-    const { rawCodes, hashedCodes } = await generateBackupCodes();
-
     // Enable MFA
     await prisma.user.update({
       where: { id: dbUser.id },
       data: {
         mfaEnabled: true,
-        backupCodes: hashedCodes,
       },
     });
 
@@ -437,7 +413,6 @@ export async function enableMfa(req: Request, res: Response, next: NextFunction)
 
     res.status(200).json({
       message: 'MFA enabled successfully.',
-      backupCodes: rawCodes,
     });
   } catch (error) {
     next(error);

@@ -7,7 +7,7 @@ export const loginSchema = z.object({
 
 export const mfaLoginVerifySchema = z.object({
   tempToken: z.string().min(1, 'Temporary authentication token is required.'),
-  code: z.string().min(6, 'MFA Code must be at least 6 digits/characters.').max(15),
+  code: z.string().min(6, 'MFA Code must be 6 digits.').max(6),
 });
 
 export const mfaVerifySchema = z.object({

@@ -113,7 +113,6 @@ async function runTests() {
     mustChangePassword: false,
     mfaEnabled: false,
     mfaSecret: null as string | null,
-    backupCodes: null as any,
     emailVerified: true,
   };
 

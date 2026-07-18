@@ -33,7 +33,6 @@
 - [ ] Email verification enforced: unverified login returns `{ emailNotVerified: true }`
 - [ ] MFA enforcement: SystemAdmin/Manager without MFA returns `{ mfaSetupRequired: true }`
 - [ ] MFA setup flow tested for at least one Admin account
-- [ ] Backup codes generated and stored safely
 - [ ] Refresh token rotation verified (old token invalidated after refresh)
 - [ ] Token reuse attack detection verified (whole family revoked on reuse)
 

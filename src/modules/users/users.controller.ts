@@ -163,10 +163,10 @@ export async function updateUser(req: Request, res: Response, next: NextFunction
 
     // Resolve update data
     const updateData: any = { ...body };
-    if (body.password) {
+    if (body.password && body.password.trim() !== '') {
       updateData.passwordHash = await hashPassword(body.password);
-      delete updateData.password;
     }
+    delete updateData.password;
 
     const updatedUser = await prisma.user.update({
       where: { id },

@@ -128,6 +128,34 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
       throw new AppError('Project not found.', 404);
     }
 
+    // Calculate file hash
+    const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+
+    // Check if duplicate file already exists in current project
+    let existingProjectFile = null;
+    if (prisma.file && prisma.file.findFirst) {
+      existingProjectFile = await prisma.file.findFirst({
+        where: {
+          projectId,
+          hash: fileHash,
+          deletedAt: null
+        }
+      });
+    }
+
+    if (existingProjectFile) {
+      console.log(`[${uplId}] Duplicate file skipped: Project ID: ${projectId}, Original filename: "${file.originalname}", SHA-256 hash: ${fileHash}, Existing File ID: ${existingProjectFile.id}`);
+      res.status(200).json({
+        duplicate: true,
+        skipped: true,
+        id: existingProjectFile.id,
+        fileName: existingProjectFile.originalName,
+        uploadedAt: existingProjectFile.createdAt.toISOString(),
+        viewLink: existingProjectFile.googleDriveViewLink || `https://drive.google.com/file/d/${existingProjectFile.googleDriveFileId}/view`
+      });
+      return;
+    }
+
     // [4/10] Event lookup
     logStage(4, 'Event lookup');
     const eventId = req.body.eventId || req.query.eventId;
@@ -211,8 +239,6 @@ export async function uploadProjectFile(req: Request, res: Response, next: NextF
 
     // [9/10] Database record created
     logStage(9, 'Database record created');
-    // Calculate file hash
-    const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
 
     const fileRecord = await prisma.file.create({
       data: {

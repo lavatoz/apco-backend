@@ -648,6 +648,64 @@ export async function runTests() {
     }
   });
 
+  await testCase('Upload: Duplicate files are skipped and return 200 with skipped details', async () => {
+    let driveUploadCalled = false;
+    let fileCreateCalled = false;
+
+    mockPrisma.file = {
+      findFirst: async () => ({
+        id: 'existing-file-uuid',
+        originalName: 'portrait.jpg',
+        mimeType: 'image/jpeg',
+        size: 512,
+        hash: '228f4cc14d21217e99ffb92471b00e34c9c6123456789abcdef0123456789abc',
+        googleDriveFileId: 'existing-drive-id',
+        googleDriveViewLink: 'https://drive.google.com/existing/view',
+        createdAt: new Date()
+      }),
+      create: async () => {
+        fileCreateCalled = true;
+        return {};
+      }
+    };
+
+    const mockFile = {
+      buffer: Buffer.from('sample image content'),
+      originalname: 'portrait.jpg',
+      mimetype: 'image/jpeg',
+      size: 512
+    };
+
+    const { req, res, next, results } = mockRequestResponse(
+      { projectId: 'project-1', folderType: 'Gallery', isSecured: 'false' },
+      {}, {}, mockFile, testAdminUser
+    );
+
+    const googleDriveService = require('../services/google-drive.service');
+    const originalUpload = googleDriveService.uploadFile;
+    googleDriveService.uploadFile = async () => {
+      driveUploadCalled = true;
+      return { id: 'new-drive-id' };
+    };
+
+    try {
+      await uploadProjectFile(req, res, next);
+      const { statusCode, responseData } = results();
+
+      if (statusCode !== 200) {
+        throw new Error(`Expected 200 success response for duplicate upload, got ${statusCode}.`);
+      }
+      if (responseData.duplicate !== true || responseData.skipped !== true) {
+        throw new Error('Expected duplicate: true and skipped: true in response.');
+      }
+      if (driveUploadCalled || fileCreateCalled) {
+        throw new Error('Expected no Google Drive upload or Database file creation for duplicate.');
+      }
+    } finally {
+      googleDriveService.uploadFile = originalUpload;
+    }
+  });
+
   // Restore prisma models and services
   googleDriveService.getOrCreateProjectFolderStructure = originalGetOrCreate;
   mockPrisma.file = originalFile;

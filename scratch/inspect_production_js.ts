@@ -1,3 +1,5 @@
+export {};
+
 async function main() {
   const url = 'https://apco-main-ashwin-tcn5.vercel.app/assets/index-Co99nQct.js';
   console.log(`Fetching deployed script: ${url}...`);

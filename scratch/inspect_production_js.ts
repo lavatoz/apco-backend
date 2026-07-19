@@ -1,7 +1,7 @@
 export {};
 
 async function main() {
-  const url = 'https://apco-main-ashwin-tcn5.vercel.app/assets/index-Co99nQct.js';
+  const url = 'https://apco-main-ashwin-tcn5.vercel.app/assets/index-BlyD0REI.js';
   console.log(`Fetching deployed script: ${url}...`);
 
   const response = await fetch(url);

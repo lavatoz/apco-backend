@@ -144,7 +144,7 @@ export function applyBrandingFooterToDoc(
   }
 }
 
-import { StandardFonts, rgb } from 'pdf-lib';
+import { StandardFonts, rgb, PDFName, PDFArray, PDFString } from 'pdf-lib';
 
 /**
  * Draws the verification link immediately above the branded black footer or the standard page footer.
@@ -163,6 +163,23 @@ export async function applyVerificationFooterToDoc(
   
   const yStart = hasBlackFooter ? 108 : 53;
 
+  const textWidth = font.widthOfTextAtSize(verificationUrl, 7.5);
+  const textHeight = font.heightAtSize(7.5);
+
+  const linkX = margin;
+  const linkY = yStart - 1.5;
+  const linkWidth = textWidth;
+  const linkHeight = textHeight + 3.0;
+
+  const { context } = pdfDoc;
+
+  // Create the URI action once
+  const uriAction = context.obj({
+    Type: 'Action',
+    S: 'URI',
+    URI: PDFString.of(verificationUrl),
+  });
+
   for (const page of pages) {
     page.drawText('Verify this document:', {
       x: margin,
@@ -179,6 +196,26 @@ export async function applyVerificationFooterToDoc(
       font: font,
       color: textColor,
     });
+
+    // Create the link annotation for each page
+    const linkAnnotation = context.register(
+      context.obj({
+        Type: 'Annot',
+        Subtype: 'Link',
+        Rect: [linkX, linkY, linkX + linkWidth, linkY + linkHeight],
+        Border: [0, 0, 0],
+        A: uriAction,
+      })
+    );
+
+    // Add the annotation to the page
+    const annotations = page.node.lookup(PDFName.of('Annots'), PDFArray);
+    if (annotations) {
+      annotations.push(linkAnnotation);
+    } else {
+      page.node.set(PDFName.of('Annots'), context.obj([linkAnnotation]));
+    }
   }
 }
+
 

@@ -7,6 +7,9 @@ import fs from 'fs';
 import path from 'path';
 import { aahaLogoBase64, tinyToesLogoBase64 } from '../../services/default-logo';
 import { securePdfDocument } from '../../services/pdf-security.service';
+import { DocumentRegistryService } from '../../services/document-registry.service';
+import { applyVerificationFooterToDoc } from '../../services/pdf-branding.service';
+
 
 const parseHexColor = (hex: string | undefined): any => {
   if (!hex) return rgb(0.23, 0.51, 0.96); // Default APCO blue
@@ -677,7 +680,7 @@ export class StandaloneAgreementsService {
       const font = isBold ? fontBold : fontRegular;
       const textHeight = fontSize;
 
-      if (y - textHeight - spacing < 60) {
+      if (y - textHeight - spacing < 80) {
         page = pdfDoc.addPage([pageWidth, pageHeight]);
         pageIndex++;
         y = pageHeight - 110;
@@ -967,7 +970,7 @@ export class StandaloneAgreementsService {
     // 4. Signature Section
     const signature = agreement.signatures[0];
     if (signature) {
-      if (y - 120 < 60) {
+      if (y - 120 < 80) {
         page = pdfDoc.addPage([pageWidth, pageHeight]);
         pageIndex++;
         y = pageHeight - margin - 30;
@@ -1018,7 +1021,7 @@ export class StandaloneAgreementsService {
 
     // 5. Verification Section
     if (agreement.documents.length > 0) {
-      if (y - 80 < 60) {
+      if (y - 80 < 80) {
         page = pdfDoc.addPage([pageWidth, pageHeight]);
         pageIndex++;
         y = pageHeight - margin - 30;
@@ -1041,9 +1044,17 @@ export class StandaloneAgreementsService {
       }
     }
 
+    // Generate Document ID and Verification URL
+    const resolvedPrefixForDoc = companyProfile?.invoicePrefix || 'APCO';
+    const documentId = await DocumentRegistryService.generateDocumentId(resolvedPrefixForDoc);
+    const verificationUrl = DocumentRegistryService.getVerificationUrl(documentId);
+
+    // Apply verification link above the footer
+    await applyVerificationFooterToDoc(pdfDoc, verificationUrl, { hasBlackFooter: false, margin: 50 });
+
     // 6. Save PDF to disk
     const pdfBytes = await pdfDoc.save();
-    const { securedBuffer } = await securePdfDocument(Buffer.from(pdfBytes));
+    const { securedBuffer, fingerprint } = await securePdfDocument(Buffer.from(pdfBytes));
     const dirPath = path.resolve(process.cwd(), 'uploads/standalone-agreements/pdfs');
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
@@ -1054,6 +1065,16 @@ export class StandaloneAgreementsService {
     fs.writeFileSync(filePath, securedBuffer);
 
     const relativePath = `uploads/standalone-agreements/pdfs/${fileName}`;
+
+    // Register document in the Document Registry
+    await DocumentRegistryService.registerDocument(documentId, {
+      documentNumber: agreement.agreementCode || agreement.id,
+      documentType: 'AGREEMENT',
+      clientId: agreement.clientId,
+      projectId: project?.id || null,
+      companyId: brandProfile?.id || companyProfile?.id || null,
+      sha256Hash: fingerprint,
+    });
 
     // Update database fields
     await prisma.standaloneAgreement.update({

@@ -10,6 +10,8 @@ import { logWorkflowEvent } from '../../services/workflow.service';
 import { AppError } from '../../middleware/error';
 import { Role } from '@prisma/client';
 import { aahaLogoBase64, tinyToesLogoBase64 } from '../../services/default-logo';
+import { DocumentRegistryService } from '../../services/document-registry.service';
+
 
 function extractBrideGroomNames(projectName: string, clientName: string): { brideName: string; groomName: string } {
   const cleanProjectName = projectName
@@ -201,6 +203,11 @@ export async function generateProjectAgreement(req: Request, res: Response, next
     const quotationNumber = req.body.quotationNumber || quotation?.quotationNumber || 'N/A';
     const invoiceNumber = req.body.invoiceNumber || invoice?.invoiceNumber || 'N/A';
 
+    // Generate Document ID and Verification URL for the Document Registry
+    const resolvedPrefixForDoc = brandProfile?.invoicePrefix || companyProfile?.invoicePrefix || 'APCO';
+    const documentId = await DocumentRegistryService.generateDocumentId(resolvedPrefixForDoc);
+    const verificationUrl = DocumentRegistryService.getVerificationUrl(documentId);
+
     // 6. Generate PDF Buffer
     const pdfBuffer = await generateAgreementPdf({
       clientName,
@@ -223,6 +230,7 @@ export async function generateProjectAgreement(req: Request, res: Response, next
       companyAddress,
       primaryColor,
       templateVersion: quotation?.templateVersion || invoice?.templateVersion || '1.0',
+      verificationUrl,
     });
 
     // 8. Generate atomic counter-based AGR agreement number: AGR-{YEAR}-{SEQUENCE}
@@ -322,6 +330,16 @@ export async function generateProjectAgreement(req: Request, res: Response, next
         fileId: fileRecord.id,
         status: 'Generated',
       },
+    });
+
+    // Register document in the Document Registry
+    await DocumentRegistryService.registerDocument(documentId, {
+      documentNumber: agreementNumber,
+      documentType: 'AGREEMENT',
+      clientId: project.clientId,
+      projectId: projectId,
+      companyId: brandProfile?.id || companyProfile?.id || null,
+      sha256Hash: fileRecord.hash,
     });
 
     // Write workflow timeline and audit logs

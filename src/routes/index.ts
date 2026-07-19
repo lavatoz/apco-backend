@@ -42,6 +42,7 @@ import {
   getClientAgreementsListController,
   getClientAgreementDetailsController
 } from '../modules/standalone-agreements/standalone-agreements.controller';
+import { verifyPublicDocumentController, verifyDocumentByIdController } from '../modules/public/public.controller';
 
 const router = Router();
 
@@ -75,6 +76,8 @@ router.get('/public/website-gallery', getPublicWebsiteGalleries);
 router.use('/divisions', divisionsRoutes);
 router.get('/public/divisions', getPublicDivisions);
 router.get('/public/divisions/media/:fileId', streamPublicDivisionMedia);
+router.get('/public/verify/:verificationId', verifyPublicDocumentController);
+router.get('/verify/:documentId', verifyDocumentByIdController);
 router.use('/workflow', workflowRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/tasks', tasksRoutes);

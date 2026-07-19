@@ -12,6 +12,7 @@ import { generateQuotationPdf } from '../../services/quotation-pdf.service';
 import { aahaLogoBase64, tinyToesLogoBase64 } from '../../services/default-logo';
 import { getOrCreateProjectFolderStructure } from '../../services/google-drive.service';
 import { InvoicesService } from './invoices.service';
+import { DocumentRegistryService } from '../../services/document-registry.service';
 
 /**
  * Resolves prefix for a project based on its type or falls back to default company
@@ -894,6 +895,11 @@ export async function generateQuotationPdfController(req: Request, res: Response
       };
     }
 
+    // Generate Document ID and Verification URL for the Document Registry
+    const resolvedPrefixForDoc = brandProfile?.invoicePrefix || companyProfile?.invoicePrefix || 'APCO';
+    const documentId = await DocumentRegistryService.generateDocumentId(resolvedPrefixForDoc);
+    const verificationUrl = DocumentRegistryService.getVerificationUrl(documentId);
+
     // 7. Generate PDF Buffer using the service
     const pdfBuffer = await generateQuotationPdf({
       quotationNumber: quotation.quotationNumber,
@@ -927,6 +933,7 @@ export async function generateQuotationPdfController(req: Request, res: Response
       tagline,
       templateId: quotation.templateId || undefined,
       themePreset: brandProfile?.themePreset || companyProfile?.themePreset || undefined,
+      verificationUrl,
     });
 
     const sanitizedClientName = quotation.client.name.replace(/[^a-zA-Z0-9]/g, '_');
@@ -1006,6 +1013,16 @@ export async function generateQuotationPdfController(req: Request, res: Response
           category: 'Quotations',
         },
       });
+
+    // Register document in the Document Registry
+    await DocumentRegistryService.registerDocument(documentId, {
+      documentNumber: quotation.quotationNumber,
+      documentType: 'QUOTATION',
+      clientId: quotation.clientId,
+      projectId: quotation.projectId,
+      companyId: brandProfile?.id || companyProfile?.id || null,
+      sha256Hash: fileRecord.hash,
+    });
 
     // 11. Write timeline event and audit logs
     await logWorkflowEvent({

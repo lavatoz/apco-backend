@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import QRCode from 'qrcode';
-import { loadFooterImage, applyBrandingFooterToDoc } from './pdf-branding.service';
+import { loadFooterImage, applyBrandingFooterToDoc, applyVerificationFooterToDoc } from './pdf-branding.service';
 import { securePdfDocument } from './pdf-security.service';
 
 export interface QuotationItemData {
@@ -19,6 +19,8 @@ export interface QuotationPdfData {
   clientPhone?: string;
   clientAddress?: string;
   clientCompanyName?: string;
+  verificationUrl?: string;
+
   items: QuotationItemData[];
   amount: number;
   discountType?: string;
@@ -791,6 +793,10 @@ export async function generateQuotationPdf(data: QuotationPdfData): Promise<Buff
     // Draw graphic footer on all pages
     applyBrandingFooterToDoc(pdfDoc, footerEmbed, pageWidth, contentWidth);
 
+    if (data.verificationUrl) {
+      await applyVerificationFooterToDoc(pdfDoc, data.verificationUrl, { hasBlackFooter: true, margin });
+    }
+
     const pdfBytes = await pdfDoc.save();
     const { securedBuffer } = await securePdfDocument(Buffer.from(pdfBytes));
     return securedBuffer;
@@ -1110,6 +1116,10 @@ export async function generateQuotationPdf(data: QuotationPdfData): Promise<Buff
     }
 
     applyBrandingFooterToDoc(pdfDoc, footerEmbed, pageWidth, contentWidth);
+
+    if (data.verificationUrl) {
+      await applyVerificationFooterToDoc(pdfDoc, data.verificationUrl, { hasBlackFooter: true, margin });
+    }
 
     const pdfBytes = await pdfDoc.save();
     const { securedBuffer } = await securePdfDocument(Buffer.from(pdfBytes));

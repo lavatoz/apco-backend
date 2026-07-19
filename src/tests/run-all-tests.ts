@@ -10,6 +10,7 @@ import { runTests as runWebsiteGalleryUploadTests } from './website-gallery-uplo
 import { runTests as runWebsiteGalleryCrudTests } from './website-gallery-crud-integration';
 import { runTests as runWebsiteDivisionsTests } from './divisions-crud-integration';
 import { runTests as runPdfSecurityTests } from './pdf-security-integration';
+import { runTests as runPublicVerifyTests } from './public-verify-integration';
 
 async function executeSuite() {
   console.log('🚀 Running APCO Complete Test Suite...');
@@ -47,6 +48,9 @@ async function executeSuite() {
 
     // Run PDF Security & Encryption Integration
     await runPdfSecurityTests();
+
+    // Run Public Document Verification Integration
+    await runPublicVerifyTests();
     
     console.log('\n🎉 ALL TEST SUITES PASSED SUCCESSFULLY!');
     process.exit(0);

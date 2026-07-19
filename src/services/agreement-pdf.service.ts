@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import fs from 'fs';
 import path from 'path';
 import { securePdfDocument } from './pdf-security.service';
+import { applyVerificationFooterToDoc } from './pdf-branding.service';
 
 export interface AgreementData {
   clientName: string;
@@ -24,7 +25,9 @@ export interface AgreementData {
   companyAddress?: string;
   primaryColor?: string;
   templateVersion?: string;
+  verificationUrl?: string;
 }
+
 
 /**
  * Resolves path to template and asset files supporting ts-node and dist runtime.
@@ -426,7 +429,7 @@ export async function generateAgreementPdf(data: AgreementData): Promise<Buffer>
       const lineSpacing = i === wrappedLines.length - 1 ? spacing : 2;
 
       // Check if we exceed page height
-      if (y - fontSize - lineSpacing < 65) {
+      if (y - fontSize - lineSpacing < 80) {
         page = pdfDoc.addPage([pageWidth, pageHeight]);
         pageIndex++;
         y = pageHeight - 95;
@@ -444,7 +447,7 @@ export async function generateAgreementPdf(data: AgreementData): Promise<Buffer>
     }
 
     if (drawDivider) {
-      if (y - 8 < 65) {
+      if (y - 8 < 80) {
         page = pdfDoc.addPage([pageWidth, pageHeight]);
         pageIndex++;
         y = pageHeight - 95;
@@ -465,7 +468,7 @@ export async function generateAgreementPdf(data: AgreementData): Promise<Buffer>
     const keyWidth = fontBold.widthOfTextAtSize(key + ' ', fontSize);
 
     // Check page break
-    if (y - fontSize - spacing < 65) {
+    if (y - fontSize - spacing < 80) {
       page = pdfDoc.addPage([pageWidth, pageHeight]);
       pageIndex++;
       y = pageHeight - 95;
@@ -677,6 +680,11 @@ export async function generateAgreementPdf(data: AgreementData): Promise<Buffer>
 
     const cleanLine = trimmed.replace(/%i/g, '');
     writeLine(cleanLine, isTitle || isHeading, fontSize, lineSpacing, textColor, drawDivider);
+  }
+
+  // Draw verification footer if provided
+  if (data.verificationUrl) {
+    await applyVerificationFooterToDoc(pdfDoc, data.verificationUrl, { hasBlackFooter: false, margin: 50 });
   }
 
   // 4. Save document to Buffer

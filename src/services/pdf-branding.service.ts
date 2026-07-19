@@ -143,3 +143,42 @@ export function applyBrandingFooterToDoc(
     drawBrandingFooter(page, footerEmbed, pageWidth, contentWidth);
   }
 }
+
+import { StandardFonts, rgb } from 'pdf-lib';
+
+/**
+ * Draws the verification link immediately above the branded black footer or the standard page footer.
+ */
+export async function applyVerificationFooterToDoc(
+  pdfDoc: PDFDocument,
+  verificationUrl: string,
+  options?: { hasBlackFooter?: boolean; margin?: number }
+): Promise<void> {
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const pages = pdfDoc.getPages();
+  const textColor = rgb(107 / 255, 114 / 255, 128 / 255); // #6B7280
+  
+  const hasBlackFooter = options?.hasBlackFooter ?? false;
+  const margin = options?.margin ?? 40;
+  
+  const yStart = hasBlackFooter ? 108 : 53;
+
+  for (const page of pages) {
+    page.drawText('Verify this document:', {
+      x: margin,
+      y: yStart + 10.5,
+      size: 7.5,
+      font: font,
+      color: textColor,
+    });
+
+    page.drawText(verificationUrl, {
+      x: margin,
+      y: yStart,
+      size: 7.5,
+      font: font,
+      color: textColor,
+    });
+  }
+}
+

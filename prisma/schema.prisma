@@ -777,3 +777,17 @@ enum DivisionMediaType {
   IMAGE
   VIDEO
 }
+
+model DocumentRegistry {
+  documentId      String   @id
+  verificationUrl String
+  documentNumber  String
+  documentType    String
+  clientId        String
+  projectId       String?
+  companyId       String?
+  sha256Hash      String
+  createdAt       DateTime @default(now())
+  status          String   @default("Active")
+}
+

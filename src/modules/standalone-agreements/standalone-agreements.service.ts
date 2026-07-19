@@ -1046,8 +1046,11 @@ export class StandaloneAgreementsService {
 
     // Generate Document ID and Verification URL
     const resolvedPrefixForDoc = companyProfile?.invoicePrefix || 'APCO';
-    const documentId = await DocumentRegistryService.generateDocumentId(resolvedPrefixForDoc);
-    const verificationUrl = DocumentRegistryService.getVerificationUrl(documentId);
+    const { documentId, verificationUrl } = await DocumentRegistryService.getOrCreateDocumentId(
+      agreement.agreementCode || agreement.id,
+      'AGREEMENT',
+      resolvedPrefixForDoc
+    );
 
     // Apply verification link above the footer
     await applyVerificationFooterToDoc(pdfDoc, verificationUrl, { hasBlackFooter: false, margin: 50 });

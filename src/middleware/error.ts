@@ -72,9 +72,7 @@ export function errorHandler(
 
     res.status(400).json({
       error: 'Database Error',
-      message: env.NODE_ENV === 'production' 
-        ? 'A database constraint violation occurred.' 
-        : err.message,
+      message: err.message,
       requestId,
     });
     return;

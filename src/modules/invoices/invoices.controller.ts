@@ -895,10 +895,13 @@ export async function generateQuotationPdfController(req: Request, res: Response
       };
     }
 
-    // Generate Document ID and Verification URL for the Document Registry
+    // Generate Document ID and Verification URL for the Document Registry (idempotent lookup/creation)
     const resolvedPrefixForDoc = brandProfile?.invoicePrefix || companyProfile?.invoicePrefix || 'APCO';
-    const documentId = await DocumentRegistryService.generateDocumentId(resolvedPrefixForDoc);
-    const verificationUrl = DocumentRegistryService.getVerificationUrl(documentId);
+    const { documentId, verificationUrl } = await DocumentRegistryService.getOrCreateDocumentId(
+      quotation.quotationNumber,
+      'QUOTATION',
+      resolvedPrefixForDoc
+    );
 
     // 7. Generate PDF Buffer using the service
     const pdfBuffer = await generateQuotationPdf({

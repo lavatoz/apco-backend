@@ -203,10 +203,26 @@ export async function generateProjectAgreement(req: Request, res: Response, next
     const quotationNumber = req.body.quotationNumber || quotation?.quotationNumber || 'N/A';
     const invoiceNumber = req.body.invoiceNumber || invoice?.invoiceNumber || 'N/A';
 
+    // 8. Generate atomic counter-based AGR agreement number: AGR-{YEAR}-{SEQUENCE}
+    const agrYear = new Date().getFullYear();
+    const counterResult = await prisma.$queryRaw<Array<{ lastValue: number }>>`
+      INSERT INTO "DocumentCounter" ("prefix", "type", "year", "lastValue")
+      VALUES ('AGR', 'AGR_SEQ', ${agrYear}, 1)
+      ON CONFLICT ("prefix", "type", "year")
+      DO UPDATE SET "lastValue" = "DocumentCounter"."lastValue" + 1
+      RETURNING "lastValue";
+    `;
+    const sequenceValue = counterResult[0]?.lastValue ?? 1;
+    const formattedSeq = String(sequenceValue).padStart(4, '0');
+    const agreementNumber = `AGR-${agrYear}-${formattedSeq}`;
+
     // Generate Document ID and Verification URL for the Document Registry
     const resolvedPrefixForDoc = brandProfile?.invoicePrefix || companyProfile?.invoicePrefix || 'APCO';
-    const documentId = await DocumentRegistryService.generateDocumentId(resolvedPrefixForDoc);
-    const verificationUrl = DocumentRegistryService.getVerificationUrl(documentId);
+    const { documentId, verificationUrl } = await DocumentRegistryService.getOrCreateDocumentId(
+      agreementNumber,
+      'AGREEMENT',
+      resolvedPrefixForDoc
+    );
 
     // 6. Generate PDF Buffer
     const pdfBuffer = await generateAgreementPdf({
@@ -232,19 +248,6 @@ export async function generateProjectAgreement(req: Request, res: Response, next
       templateVersion: quotation?.templateVersion || invoice?.templateVersion || '1.0',
       verificationUrl,
     });
-
-    // 8. Generate atomic counter-based AGR agreement number: AGR-{YEAR}-{SEQUENCE}
-    const year = new Date().getFullYear();
-    const counterResult = await prisma.$queryRaw<Array<{ lastValue: number }>>`
-      INSERT INTO "DocumentCounter" ("prefix", "type", "year", "lastValue")
-      VALUES ('AGR', 'AGR_SEQ', ${year}, 1)
-      ON CONFLICT ("prefix", "type", "year")
-      DO UPDATE SET "lastValue" = "DocumentCounter"."lastValue" + 1
-      RETURNING "lastValue";
-    `;
-    const sequenceValue = counterResult[0]?.lastValue ?? 1;
-    const formattedSeq = String(sequenceValue).padStart(4, '0');
-    const agreementNumber = `AGR-${year}-${formattedSeq}`;
 
     const fileName = `Agreement_${agreementNumber}_${clientName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
     const relativeLocalPath = `uploads/agreements/pdfs/${fileName}`;

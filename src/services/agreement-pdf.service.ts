@@ -688,7 +688,7 @@ export async function generateAgreementPdf(data: AgreementData): Promise<Buffer>
   }
 
   // 4. Save document to Buffer
-  const pdfBytes = await pdfDoc.save();
+  const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
   const { securedBuffer } = await securePdfDocument(Buffer.from(pdfBytes));
   return securedBuffer;
 }

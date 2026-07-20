@@ -1056,7 +1056,7 @@ export class StandaloneAgreementsService {
     await applyVerificationFooterToDoc(pdfDoc, verificationUrl, { hasBlackFooter: false, margin: 50 });
 
     // 6. Save PDF to disk
-    const pdfBytes = await pdfDoc.save();
+    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
     const { securedBuffer, fingerprint } = await securePdfDocument(Buffer.from(pdfBytes));
     const dirPath = path.resolve(process.cwd(), 'uploads/standalone-agreements/pdfs');
     if (!fs.existsSync(dirPath)) {

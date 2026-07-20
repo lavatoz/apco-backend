@@ -797,7 +797,7 @@ export async function generateQuotationPdf(data: QuotationPdfData): Promise<Buff
       await applyVerificationFooterToDoc(pdfDoc, data.verificationUrl, { hasBlackFooter: true, margin });
     }
 
-    const pdfBytes = await pdfDoc.save();
+    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
     const { securedBuffer } = await securePdfDocument(Buffer.from(pdfBytes));
     return securedBuffer;
   } else {
@@ -1121,7 +1121,7 @@ export async function generateQuotationPdf(data: QuotationPdfData): Promise<Buff
       await applyVerificationFooterToDoc(pdfDoc, data.verificationUrl, { hasBlackFooter: true, margin });
     }
 
-    const pdfBytes = await pdfDoc.save();
+    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
     const { securedBuffer } = await securePdfDocument(Buffer.from(pdfBytes));
     return securedBuffer;
   }

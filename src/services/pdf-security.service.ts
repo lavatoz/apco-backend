@@ -76,23 +76,7 @@ export async function encryptPdfDocument(
     allowModifying: false,
     allowPrinting: true,
   });
-
-  let binaryStr = Buffer.from(encryptedBytes).toString('binary');
-  const origBinaryStr = fileBuffer.toString('binary');
-  const uriMatches = origBinaryStr.match(/\/S\s*\/URI\s*\/URI\s*\(((?:[^()\\]|\\.)*)\)/g);
-  if (uriMatches) {
-    for (const match of uriMatches) {
-      const urlExtract = match.match(/\/URI\s*\(((?:[^()\\]|\\.)*)\)/);
-      if (urlExtract && urlExtract[1]) {
-        const rawUrl = urlExtract[1];
-        if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
-          binaryStr = binaryStr.replace(/\/S\s*\/URI\s*\/URI\s*\((?:[^()\\]|\\.)*\)/g, `/S /URI /URI (${rawUrl})`);
-        }
-      }
-    }
-  }
-
-  return Buffer.from(binaryStr, 'binary');
+  return Buffer.from(encryptedBytes);
 }
 
 /**

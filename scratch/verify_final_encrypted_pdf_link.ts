@@ -25,7 +25,7 @@ async function verifyFinalPdfLink() {
     headers: { 'user-agent': 'test-agent' }
   };
 
-  let generatedBuffer: Buffer | null = null;
+  let generatedBuffer: any = null;
   let statusCode = 0;
 
   const res: any = {
@@ -50,7 +50,8 @@ async function verifyFinalPdfLink() {
 
   console.log('\n📄 Step 2: Generating real secured PDF via generateQuotationPdfController...');
   await generateQuotationPdfController(req, res, next);
-  console.log(`PDF Generation finished with status ${statusCode}, Buffer size: ${generatedBuffer?.length || 0} bytes`);
+  const bufLen = generatedBuffer ? (generatedBuffer as Buffer).length : 0;
+  console.log(`PDF Generation finished with status ${statusCode}, Buffer size: ${bufLen} bytes`);
 
   if (!generatedBuffer) {
     throw new Error('No PDF buffer returned by controller.');
@@ -58,7 +59,7 @@ async function verifyFinalPdfLink() {
 
   // Step 3: Inspect the final encrypted PDF using pdf-lib
   console.log('\n🔍 Step 3: Inspecting PDF /Annots structure of the final encrypted PDF...');
-  const pdfDoc = await PDFDocument.load(generatedBuffer, { ignoreEncryption: true });
+  const pdfDoc = await PDFDocument.load(generatedBuffer as Buffer, { ignoreEncryption: true });
   const pages = pdfDoc.getPages();
   console.log(`Total Pages in PDF: ${pages.length}`);
 
@@ -97,7 +98,7 @@ async function verifyFinalPdfLink() {
           console.log(`    - Flags (F): ${flags}`);
           console.log(`    - URI Action: ${uriAction}`);
 
-          if (subtype === '/Link' && uriAction.startsWith('(https://verify.artisains.com/verify/')) {
+          if (subtype === '/Link' && uriAction.includes('https://verify.artisains.com/verify/')) {
             foundLinkAnnot = true;
           }
         }

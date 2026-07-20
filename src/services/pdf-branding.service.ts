@@ -166,10 +166,10 @@ export async function applyVerificationFooterToDoc(
   const textWidth = font.widthOfTextAtSize(verificationUrl, 7.5);
   const textHeight = font.heightAtSize(7.5);
 
-  const linkX = margin;
-  const linkY = yStart - 2.0;
-  const linkWidth = textWidth + 4.0;
-  const linkHeight = textHeight + 4.0;
+  const linkX1 = margin;
+  const linkY1 = yStart - 2.0;
+  const linkX2 = margin + textWidth;
+  const linkY2 = yStart + textHeight + 1.0;
 
   const { context } = pdfDoc;
 
@@ -197,22 +197,22 @@ export async function applyVerificationFooterToDoc(
       color: textColor,
     });
 
-    // Create the link annotation for each page
+    // Create the link annotation for each page with exact matching coordinates
     const linkAnnotation = context.register(
       context.obj({
         Type: 'Annot',
         Subtype: 'Link',
-        Rect: [linkX, linkY, linkX + linkWidth, linkY + linkHeight],
+        Rect: [linkX1, linkY1, linkX2, linkY2],
         Border: [0, 0, 0],
         C: [0, 0, 0],
         F: 4,
         H: 'I',
         A: uriAction,
         QuadPoints: [
-          linkX, linkY + linkHeight,
-          linkX + linkWidth, linkY + linkHeight,
-          linkX, linkY,
-          linkX + linkWidth, linkY
+          linkX1, linkY2,
+          linkX2, linkY2,
+          linkX1, linkY1,
+          linkX2, linkY1
         ],
       })
     );

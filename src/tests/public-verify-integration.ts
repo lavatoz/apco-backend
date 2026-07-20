@@ -266,7 +266,7 @@ export async function runTests() {
     await prisma.documentRegistry.upsert({
       where: { documentId },
       update: {
-        verificationUrl: 'http://localhost:3000/verify/' + documentId,
+        verificationUrl: 'https://verify.artisains.com/verify/' + documentId,
         documentNumber: 'QT-2026-TEST',
         documentType: 'QUOTATION',
         clientId: createdClientId || 'test-client',
@@ -276,7 +276,7 @@ export async function runTests() {
       },
       create: {
         documentId,
-        verificationUrl: 'http://localhost:3000/verify/' + documentId,
+        verificationUrl: 'https://verify.artisains.com/verify/' + documentId,
         documentNumber: 'QT-2026-TEST',
         documentType: 'QUOTATION',
         clientId: createdClientId || 'test-client',

@@ -26,7 +26,7 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
-  const requestId = req.requestId;
+  const requestId = (req as any).requestId;
 
   // Log error (in a production environment, this would go to a logger like Winston/Pino)
   console.error(`[Error] RequestID: ${requestId} | Path: ${req.path} | Method: ${req.method}`);

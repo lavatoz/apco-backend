@@ -994,28 +994,37 @@ export async function generateQuotationPdfController(req: Request, res: Response
     }
 
     // 10. Register generated PDF file in File table with local file path as key
+    const newHash = require('crypto').createHash('sha256').update(pdfBuffer).digest('hex');
     const existingFile = await prisma.file.findUnique({
       where: {
         key: relativeLocalPath,
       },
     });
     const fileRecord = existingFile
-      ? existingFile
+      ? await prisma.file.update({
+          where: { id: existingFile.id },
+          data: {
+            size: pdfBuffer.length,
+            hash: newHash,
+            googleDriveFileId: driveFile?.id || existingFile.googleDriveFileId,
+            googleDriveViewLink: driveFile?.webViewLink || existingFile.googleDriveViewLink,
+          },
+        })
       : await prisma.file.create({
-        data: {
-          key: relativeLocalPath,
-          originalName: fileName,
-          mimeType: 'application/pdf',
-          size: pdfBuffer.length,
-          hash: require('crypto').createHash('sha256').update(pdfBuffer).digest('hex'),
-          isSecured: false,
-          projectId: quotation.projectId,
-          userId: user.id,
-          googleDriveFileId: driveFile?.id || null,
-          googleDriveViewLink: driveFile?.webViewLink || null,
-          category: 'Quotations',
-        },
-      });
+          data: {
+            key: relativeLocalPath,
+            originalName: fileName,
+            mimeType: 'application/pdf',
+            size: pdfBuffer.length,
+            hash: newHash,
+            isSecured: false,
+            projectId: quotation.projectId,
+            userId: user.id,
+            googleDriveFileId: driveFile?.id || null,
+            googleDriveViewLink: driveFile?.webViewLink || null,
+            category: 'Quotations',
+          },
+        });
 
     // Register document in the Document Registry
     await DocumentRegistryService.registerDocument(documentId, {

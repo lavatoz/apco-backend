@@ -1,5 +1,4 @@
 import { prisma } from '../config/database';
-import { env } from '../config/env';
 import { Prisma } from '@prisma/client';
 
 export interface DocumentRegistryCreateInput {
@@ -59,10 +58,7 @@ export class DocumentRegistryService {
    * Constructs the appropriate verification URL depending on environment
    */
   static getVerificationUrl(documentId: string): string {
-    if (env.NODE_ENV === 'production') {
-      return `https://verify.artisains.com/${documentId}`;
-    }
-    return `http://localhost:3000/verify/${documentId}`;
+    return `https://verify.artisains.com/verify/${documentId}`;
   }
 
   /**

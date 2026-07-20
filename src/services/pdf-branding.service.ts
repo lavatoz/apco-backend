@@ -167,9 +167,9 @@ export async function applyVerificationFooterToDoc(
   const textHeight = font.heightAtSize(7.5);
 
   const linkX = margin;
-  const linkY = yStart - 1.5;
-  const linkWidth = textWidth;
-  const linkHeight = textHeight + 3.0;
+  const linkY = yStart - 2.0;
+  const linkWidth = textWidth + 4.0;
+  const linkHeight = textHeight + 4.0;
 
   const { context } = pdfDoc;
 
@@ -204,7 +204,16 @@ export async function applyVerificationFooterToDoc(
         Subtype: 'Link',
         Rect: [linkX, linkY, linkX + linkWidth, linkY + linkHeight],
         Border: [0, 0, 0],
+        C: [0, 0, 0],
+        F: 4,
+        H: 'I',
         A: uriAction,
+        QuadPoints: [
+          linkX, linkY + linkHeight,
+          linkX + linkWidth, linkY + linkHeight,
+          linkX, linkY,
+          linkX + linkWidth, linkY
+        ],
       })
     );
 

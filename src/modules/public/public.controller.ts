@@ -280,13 +280,20 @@ export async function verifyDocumentByIdController(
     });
 
     // 6. Return response containing all required fields for the verification page
+    const isVerified = verificationStatus === 'VERIFIED';
+
     res.status(200).json({
-      verificationStatus,
+      verified: isVerified,
+      documentId: docRegistry.documentId,
       documentType: docRegistry.documentType,
       documentNumber: docRegistry.documentNumber,
-      clientName: client?.name || 'N/A',
+      company: companyName,
       brand: companyName,
+      client: client?.name || 'N/A',
+      clientName: client?.name || 'N/A',
+      generatedAt: docRegistry.createdAt,
       generatedDate: docRegistry.createdAt,
+      verificationStatus,
       sha256VerificationResult: docRegistry.sha256Hash
     });
   } catch (error) {

@@ -1,37 +1,30 @@
+import { PDFDocument, PDFName, PDFString, PDFHexString } from 'pdf-lib';
 import { generateQuotationPdf } from '../src/services/quotation-pdf.service';
-import { DocumentRegistryService } from '../src/services/document-registry.service';
+import { securePdfDocument } from '../src/services/pdf-security.service';
+import fs from 'fs';
 
-async function testUriFix() {
-  console.log('🧪 Testing PDF generation and URI annotation clickability inspection...\n');
+async function testFixes() {
+  console.log('--- Testing PDF Generation & Encryption ---');
 
-  const quotDocId = 'AK-DOC-2026-000009';
-  const verificationUrl = DocumentRegistryService.getVerificationUrl(quotDocId);
-
-  const pdfBuffer = await generateQuotationPdf({
-    quotationNumber: 'AK-QUO-2026-0004',
-    issueDate: '2026-07-20',
-    validUntil: '2026-08-20',
-    clientName: 'rohit',
-    clientEmail: 'rohit@example.com',
-    items: [{ description: 'Photo Service', quantity: 1, unitPrice: 50000, amount: 50000 }],
+  const sampleData = {
+    quotationNumber: 'AK-QUO-2026-TEST',
+    issueDate: '2026-07-21',
+    validUntil: '2026-08-21',
+    clientName: 'Test Client',
+    clientEmail: 'test@example.com',
+    verificationUrl: 'https://verify.apco.com/verify/AK-DOC-2026-000009',
+    items: [
+      { description: 'Photography Service', quantity: 1, unitPrice: 50000, amount: 50000 }
+    ],
     amount: 50000,
-    advancePaid: 20000,
-    balanceAmount: 30000,
-    companyName: 'Aaha Kalyanam',
-    verificationUrl,
-  });
+    advancePaid: 10000,
+    balanceAmount: 40000,
+    companyName: 'APCO Studios',
+  };
 
-  console.log(`Generated PDF Buffer size: ${pdfBuffer.length} bytes`);
-
-  const bufferString = pdfBuffer.toString('binary');
-  const hasPlaintextUrl = bufferString.includes(verificationUrl);
-  console.log(`Contains Plaintext Verification URL in final PDF buffer? ${hasPlaintextUrl}`);
-
-  if (hasPlaintextUrl) {
-    console.log('✅ Success! Verification URL exists in plaintext in the PDF binary stream.');
-  } else {
-    console.log('❌ Warning: Verification URL was encrypted by pdf-encrypt into binary ciphertext.');
-  }
+  const buffer = await generateQuotationPdf(sampleData);
+  fs.writeFileSync('scratch/quotation_encrypted_current.pdf', buffer);
+  console.log('Generated current encrypted quotation PDF');
 }
 
-testUriFix().catch(console.error);
+testFixes().catch(console.error);

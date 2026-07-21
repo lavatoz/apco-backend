@@ -1,0 +1,71 @@
+diff --git a/node_modules/@pdfsmaller/pdf-encrypt/dist/pdf-encrypt.js b/node_modules/@pdfsmaller/pdf-encrypt/dist/pdf-encrypt.js
+index bd68aa7..ff25769 100644
+--- a/node_modules/@pdfsmaller/pdf-encrypt/dist/pdf-encrypt.js
++++ b/node_modules/@pdfsmaller/pdf-encrypt/dist/pdf-encrypt.js
+@@ -285,7 +285,7 @@ function encryptStringsRC4(obj, objectNum, generationNum, encryptionKey) {
+   if (obj instanceof PDFString) {
+     const originalBytes = obj.asBytes();
+     const encrypted = encryptObjectRC4(originalBytes, objectNum, generationNum, encryptionKey);
+-    obj.value = Array.from(encrypted).map(b => String.fromCharCode(b)).join('');
++    obj.value = bytesToHex(encrypted);
+   } else if (obj instanceof PDFHexString) {
+     const originalBytes = obj.asBytes();
+     const encrypted = encryptObjectRC4(originalBytes, objectNum, generationNum, encryptionKey);
+@@ -293,7 +293,7 @@ function encryptStringsRC4(obj, objectNum, generationNum, encryptionKey) {
+   } else if (obj instanceof PDFDict) {
+     for (const [key, value] of obj.entries()) {
+       const keyName = key.asString();
+-      if (keyName !== '/Length' && keyName !== '/Filter' && keyName !== '/DecodeParms') {
++      if (keyName !== '/Length' && keyName !== '/Filter' && keyName !== '/DecodeParms' && keyName !== '/URI') {
+         encryptStringsRC4(value, objectNum, generationNum, encryptionKey);
+       }
+     }
+@@ -314,7 +314,7 @@ async function encryptStringsAES256(obj, objectNum, generationNum, cryptoKey) {
+   if (obj instanceof PDFString) {
+     const originalBytes = obj.asBytes();
+     const encrypted = await encryptObjectAES256(originalBytes, cryptoKey);
+-    obj.value = Array.from(encrypted).map(b => String.fromCharCode(b)).join('');
++    obj.value = bytesToHex(encrypted);
+   } else if (obj instanceof PDFHexString) {
+     const originalBytes = obj.asBytes();
+     const encrypted = await encryptObjectAES256(originalBytes, cryptoKey);
+@@ -322,7 +322,7 @@ async function encryptStringsAES256(obj, objectNum, generationNum, cryptoKey) {
+   } else if (obj instanceof PDFDict) {
+     for (const [key, value] of obj.entries()) {
+       const keyName = key.asString();
+-      if (keyName !== '/Length' && keyName !== '/Filter' && keyName !== '/DecodeParms') {
++      if (keyName !== '/Length' && keyName !== '/Filter' && keyName !== '/DecodeParms' && keyName !== '/URI') {
+         await encryptStringsAES256(value, objectNum, generationNum, cryptoKey);
+       }
+     }
+diff --git a/node_modules/@pdfsmaller/pdf-encrypt/dist/pdf-encrypt.mjs b/node_modules/@pdfsmaller/pdf-encrypt/dist/pdf-encrypt.mjs
+index 60dff30..ba04116 100644
+--- a/node_modules/@pdfsmaller/pdf-encrypt/dist/pdf-encrypt.mjs
++++ b/node_modules/@pdfsmaller/pdf-encrypt/dist/pdf-encrypt.mjs
+@@ -290,7 +290,7 @@ function encryptStringsRC4(obj, objectNum, generationNum, encryptionKey) {
+   if (obj instanceof PDFString) {
+     const originalBytes = obj.asBytes();
+     const encrypted = encryptObjectRC4(originalBytes, objectNum, generationNum, encryptionKey);
+-    obj.value = Array.from(encrypted).map(b => String.fromCharCode(b)).join('');
++    obj.value = bytesToHex(encrypted);
+   } else if (obj instanceof PDFHexString) {
+     const originalBytes = obj.asBytes();
+     const encrypted = encryptObjectRC4(originalBytes, objectNum, generationNum, encryptionKey);
+@@ -298,7 +298,7 @@ function encryptStringsRC4(obj, objectNum, generationNum, encryptionKey) {
+   } else if (obj instanceof PDFDict) {
+     for (const [key, value] of obj.entries()) {
+       const keyName = key.asString();
+-      if (keyName !== '/Length' && keyName !== '/Filter' && keyName !== '/DecodeParms') {
++      if (keyName !== '/Length' && keyName !== '/Filter' && keyName !== '/DecodeParms' && keyName !== '/URI') {
+         encryptStringsRC4(value, objectNum, generationNum, encryptionKey);
+       }
+     }
+@@ -319,7 +319,7 @@ async function encryptStringsAES256(obj, objectNum, generationNum, cryptoKey) {
+   if (obj instanceof PDFString) {
+     const originalBytes = obj.asBytes();
+     const encrypted = await encryptObjectAES256(originalBytes, cryptoKey);
+-    obj.value = Array.from(encrypted).map(b => String.fromCharCode(b)).join('');
++    obj.value = bytesToHex(encrypted);
+   } else if (obj instanceof PDFHexString) {
+     const originalBytes = obj.asBytes();
+     const encrypted = await encryptObjectAES256(originalBytes, cryptoKey);

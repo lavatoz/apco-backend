@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "ts-node src/tests/run-all-tests.ts",
+    "postinstall": "patch-package",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
@@ -52,6 +53,7 @@
     "@types/node": "^20.11.24",
     "@types/qrcode": "^1.5.5",
     "nodemon": "^3.1.0",
+    "patch-package": "^8.0.0",
     "prisma": "^5.10.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"

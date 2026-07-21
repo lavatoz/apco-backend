@@ -202,6 +202,7 @@ export async function applyVerificationFooterToDoc(
       context.obj({
         Type: 'Annot',
         Subtype: 'Link',
+        P: page.ref,
         Rect: [linkX1, linkY1, linkX2, linkY2],
         Border: [0, 0, 0],
         C: [0, 0, 0],

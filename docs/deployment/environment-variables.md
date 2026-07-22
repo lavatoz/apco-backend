@@ -42,6 +42,7 @@ GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./secrets/service-account.json
 | `PORT` | HTTP server port | `3000` |
 | `NODE_ENV` | Environment (`development`, `production`, `test`) | `development` |
 | `RESEND_API_KEY` | Resend email API key for transactional email | *(email disabled if blank)* |
+| `VERIFICATION_BASE_URL` | Public base URL for document verification endpoint | `https://apco-backend-production.up.railway.app/api/verify` |
 | `R2_ACCOUNT_ID` | Cloudflare R2 account ID | *(R2 disabled if blank)* |
 | `R2_ACCESS_KEY` | Cloudflare R2 access key | *(R2 disabled if blank)* |
 | `R2_SECRET_KEY` | Cloudflare R2 secret key | *(R2 disabled if blank)* |

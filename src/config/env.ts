@@ -34,6 +34,7 @@ const envSchema = z.object({
   FIREBASE_PROJECT_ID: z.string().optional().or(z.literal('')),
   FIREBASE_CLIENT_EMAIL: z.string().optional().or(z.literal('')),
   FIREBASE_PRIVATE_KEY: z.string().optional().or(z.literal('')),
+  VERIFICATION_BASE_URL: z.string().optional().or(z.literal('')),
 });
 
 type Env = z.infer<typeof envSchema>;

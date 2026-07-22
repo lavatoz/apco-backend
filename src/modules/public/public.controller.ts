@@ -15,7 +15,7 @@ const VerifyParamsSchema = z.object({
 /**
  * Fallback mechanism to resolve the physical file buffer from disk
  */
-async function getFileBuffer(file: any): Promise<Buffer | null> {
+async function getFileBuffer(file: any, options?: { allowRemoteDownload?: boolean }): Promise<Buffer | null> {
   const candidatePaths = [
     path.resolve(process.cwd(), file.key),
     path.resolve(process.cwd(), 'uploads/quotations/pdfs', file.originalName),
@@ -28,8 +28,8 @@ async function getFileBuffer(file: any): Promise<Buffer | null> {
     }
   }
 
-  // Optionally download from Google Drive if Drive ID exists
-  if (file.googleDriveFileId) {
+  // Only attempt remote Google Drive download if explicitly requested
+  if (options?.allowRemoteDownload && file.googleDriveFileId) {
     try {
       const googleDriveService = require('../../services/google-drive.service');
       const stream = await googleDriveService.downloadFileStream(file.googleDriveFileId);

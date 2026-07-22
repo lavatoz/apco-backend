@@ -80,9 +80,12 @@ export class DocumentRegistryService {
 
       if (existing) {
         console.log(`[DocumentRegistry] Found existing entry for ${documentType} ${documentNumber}:`, existing.documentId);
+        const verificationUrl = (existing.verificationUrl && !existing.verificationUrl.includes('localhost') && existing.verificationUrl.trim() !== '')
+          ? existing.verificationUrl
+          : this.getVerificationUrl(existing.documentId);
         return {
           documentId: existing.documentId,
-          verificationUrl: existing.verificationUrl,
+          verificationUrl,
         };
       }
 

@@ -58,7 +58,8 @@ export class DocumentRegistryService {
    * Constructs the appropriate verification URL depending on environment
    */
   static getVerificationUrl(documentId: string): string {
-    return `https://verify.artisains.com/verify/${documentId}`;
+    const baseUrl = process.env.VERIFICATION_BASE_URL || 'https://apco-backend-production.up.railway.app/api/verify';
+    return `${baseUrl.replace(/\/$/, '')}/${documentId}`;
   }
 
   /**
@@ -80,7 +81,10 @@ export class DocumentRegistryService {
 
       if (existing) {
         console.log(`[DocumentRegistry] Found existing entry for ${documentType} ${documentNumber}:`, existing.documentId);
-        const verificationUrl = (existing.verificationUrl && !existing.verificationUrl.includes('localhost') && existing.verificationUrl.trim() !== '')
+        const verificationUrl = (existing.verificationUrl &&
+                                 !existing.verificationUrl.includes('localhost') &&
+                                 !existing.verificationUrl.includes('verify.artisains.com') &&
+                                 existing.verificationUrl.trim() !== '')
           ? existing.verificationUrl
           : this.getVerificationUrl(existing.documentId);
         return {

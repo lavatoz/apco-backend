@@ -43,6 +43,7 @@ import {
   getClientAgreementDetailsController
 } from '../modules/standalone-agreements/standalone-agreements.controller';
 import { verifyPublicDocumentController, verifyDocumentByIdController } from '../modules/public/public.controller';
+import { adminGalleryRouter, publicGalleryRouter } from '../modules/gallery/gallery.routes';
 
 const router = Router();
 
@@ -73,6 +74,8 @@ router.use('/finance', financeRouter);
 router.use('/settings', settingsRoutes);
 router.use('/website-gallery', websiteGalleryRoutes);
 router.get('/public/website-gallery', getPublicWebsiteGalleries);
+router.use('/admin/gallery', adminGalleryRouter);
+router.use('/gallery', publicGalleryRouter);
 router.use('/divisions', divisionsRoutes);
 router.get('/public/divisions', getPublicDivisions);
 router.get('/public/divisions/media/:fileId', streamPublicDivisionMedia);

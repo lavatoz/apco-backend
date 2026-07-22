@@ -11,6 +11,7 @@ import { runTests as runWebsiteGalleryCrudTests } from './website-gallery-crud-i
 import { runTests as runWebsiteDivisionsTests } from './divisions-crud-integration';
 import { runTests as runPdfSecurityTests } from './pdf-security-integration';
 import { runTests as runPublicVerifyTests } from './public-verify-integration';
+import { runTests as runGalleryManagementTests } from './gallery-management-integration';
 
 async function executeSuite() {
   console.log('🚀 Running APCO Complete Test Suite...');
@@ -51,6 +52,9 @@ async function executeSuite() {
 
     // Run Public Document Verification Integration
     await runPublicVerifyTests();
+
+    // Run Phase 5 Gallery Management Integration
+    await runGalleryManagementTests();
     
     console.log('\n🎉 ALL TEST SUITES PASSED SUCCESSFULLY!');
     process.exit(0);

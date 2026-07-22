@@ -474,6 +474,7 @@ enum Role {
   Client
   DroneOperator
   Designer
+  Marketing
 }
 
 model Event {
@@ -789,5 +790,43 @@ model DocumentRegistry {
   sha256Hash      String
   createdAt       DateTime @default(now())
   status          String   @default("Active")
+}
+
+model GalleryCollection {
+  id             String         @id @default(uuid())
+  title          String
+  slug           String         @unique
+  description    String?
+  category       String
+  heroImage      String?
+  coverImage     String?
+  displayOrder   Int            @default(0)
+  isPublished    Boolean        @default(false)
+  seoTitle       String?
+  seoDescription String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  images         GalleryImage[]
+
+  @@index([slug])
+  @@index([isPublished, displayOrder])
+}
+
+model GalleryImage {
+  id           String            @id @default(uuid())
+  collectionId String
+  imageUrl     String
+  thumbnailUrl String?
+  caption      String?
+  altText      String?
+  displayOrder Int               @default(0)
+  isFeatured   Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  collection   GalleryCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@index([collectionId, displayOrder])
 }
 

@@ -80,6 +80,14 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
       where: { email },
     });
 
+    console.log({
+      email,
+      userFound: !!user,
+      emailVerified: user?.emailVerified,
+      hasPasswordHash: !!user?.passwordHash,
+      lockedUntil: user?.lockedUntil
+    });
+
     if (!user) {
       console.log(`[AUTH_DEBUG] User not found for email: ${email}`);
       // Return ambiguous error to prevent user enumeration attacks
@@ -112,7 +120,9 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
 
     console.log(`[AUTH_DEBUG] Verifying password. Stored hash exists: ${!!user.passwordHash}`);
     const isPasswordValid = await verifyPassword(user.passwordHash, password);
-    console.log(`[AUTH_DEBUG] Password verification result: ${isPasswordValid}`);
+    console.log({
+      passwordValid: isPasswordValid
+    });
 
     if (!isPasswordValid) {
       const newFailedAttempts = user.failedLoginAttempts + 1;
